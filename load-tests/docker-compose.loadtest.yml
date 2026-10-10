@@ -1,0 +1,6 @@
+# Used only for the load test: one machine sends all the traffic, so the per-client rate limit
+# (300 requests a minute) would be the only thing measured. Everything else is the normal stack.
+services:
+  backend:
+    environment:
+      RATE_LIMIT_ENABLED: "false"

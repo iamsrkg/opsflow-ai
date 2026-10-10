@@ -1,0 +1,34 @@
+name: Load test
+
+# Run by hand (Actions tab -> Load test -> Run workflow). It is not part of every push because the
+# numbers only mean something when compared between runs on the same kind of machine.
+on:
+  workflow_dispatch:
+    inputs:
+      vus:
+        description: Virtual users
+        default: '50'
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Machine
+        run: echo "$(nproc) CPUs, $(free -g | awk '/Mem:/{print $2}') GB memory, $(lscpu | sed -n 's/Model name: *//p')"
+      - run: docker compose -f docker-compose.yml -f load-tests/docker-compose.loadtest.yml up --build -d
+      - name: Run
+        run: VUS=${{ inputs.vus }} bash load-tests/run.sh
+      - name: Summary
+        if: always()
+        run: |
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat load-tests/results/result.json >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test-results
+          path: load-tests/results
+      - if: failure()
+        run: docker compose logs --tail=150 backend
