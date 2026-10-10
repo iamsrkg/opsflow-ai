@@ -8,6 +8,20 @@ Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React
 
 I built it to work through the parts of a backend that are easy to get wrong: state transitions, concurrent edits, events that must not be lost or handled twice, and keeping an AI suggestion from acting on its own.
 
+## What it is for
+
+Any team that takes in problems, works out what happened and has to be careful about the fix: payment operations, travel bookings, deliveries, API support. The workflow is the same in each; only the category and the usual fix change. These are the cases the seeded data and the rules cover:
+
+| A request like | Is classified as | Recommended action | Manager approval |
+|---|---|---|---|
+| "Charged ₹500 but my order still says payment pending" | `PAYMENT`, high | `REPLAY_PAYMENT_EVENT` | required |
+| "Flight booking failed at checkout but my account was debited" | `BOOKING`, high | `RELEASE_INVENTORY_AND_REFUND` | required |
+| "Driver marked the order delivered, the customer never received it" | `DELIVERY`, medium | `OPEN_COURIER_INVESTIGATION` | required |
+| "Our integration gets 504 Gateway Timeout from the API" | `TECHNICAL`, critical | `ESCALATE_TO_ON_CALL` | required |
+| Anything the rules don't recognise | `OTHER` | `REQUEST_MORE_INFORMATION` | not needed |
+
+For each one the backend collects the evidence (the request, its audit trail, whether its events were delivered, the closest runbook), stores the recommendation with that evidence, and waits. Take the first row: the customer paid, the order didn't update. An agent opens the request and runs the investigation; the payment runbook is matched; replaying the payment event is recommended; the request moves to `PENDING_APPROVAL`; a manager reads the evidence and approves or rejects; every step is in the audit trail under one correlation id.
+
 ## Try it
 
 **The whole stack, one command** (needs Docker):
@@ -83,7 +97,7 @@ graph LR
 
 ## Tests
 
-`mvn test` in `backend/` runs 41 tests:
+`mvn test` in `backend/` runs 42 tests:
 
 | Test | What it proves |
 |---|---|

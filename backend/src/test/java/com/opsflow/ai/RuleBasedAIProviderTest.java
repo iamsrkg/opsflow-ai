@@ -19,6 +19,21 @@ class RuleBasedAIProviderTest {
         assertEquals(Category.TECHNICAL, provider.classify("504 from the API", "gateway timeout").getCategory());
     }
 
+    /** The examples in the README's "What it is for" table. */
+    @Test
+    void theReadmeExamplesAreClassifiedAndGivenTheActionTheTableSays() {
+        assertExample("Charged ₹500 but my order still says payment pending", Category.PAYMENT, "REPLAY_PAYMENT_EVENT");
+        assertExample("Flight booking failed at checkout but my account was debited", Category.BOOKING, "RELEASE_INVENTORY_AND_REFUND");
+        assertExample("Driver marked the order delivered, the customer never received it", Category.DELIVERY, "OPEN_COURIER_INVESTIGATION");
+        assertExample("Our integration gets 504 Gateway Timeout from the API", Category.TECHNICAL, "ESCALATE_TO_ON_CALL");
+    }
+
+    private void assertExample(String title, Category category, String action) {
+        assertEquals(category, provider.classify(title, "").getCategory(), title);
+        assertEquals(action, policy.usualActionFor(category));
+        assertTrue(policy.requiresApproval(action));
+    }
+
     @Test
     void textNoRuleMatchesIsLeftForAPersonWithLowConfidence() {
         AIProvider.ClassificationResult result = provider.classify("Hello", "just saying hi");
