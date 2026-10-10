@@ -22,7 +22,13 @@ step "the dashboard is served"
 curl -fsS "$BASE/" | grep -q "OpsFlow" || fail "the dashboard page did not load"
 
 step "sign in"
-AGENT=$(login agent); MANAGER=$(login manager)
+# the health check answers as soon as the web server is up, which can be a moment before the
+# demo users are seeded, so give the first sign-in a little time
+for i in $(seq 1 30); do
+  AGENT=$(login agent 2>/dev/null) && [ -n "$AGENT" ] && [ "$AGENT" != null ] && break
+  sleep 2
+done
+MANAGER=$(login manager)
 [ -n "$AGENT" ] && [ "$AGENT" != null ] || fail "agent could not sign in"
 echo "ok"
 
