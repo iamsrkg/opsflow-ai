@@ -1,0 +1,22 @@
+# Private Interview & Resume Preparation Folder (Ignored from Git)
+interview-prep/
+
+# Build & Dependency Artifacts
+**/target/
+**/node_modules/
+**/dist/
+**/.mvn/maven/
+**/.mvn/maven.zip
+**/.mvn/temp/
+
+# IDE & OS Files
+.idea/
+.vscode/
+*.iml
+*.DS_Store
+Thumbs.db
+
+# Logs & Environment Secrets
+*.log
+.env
+.env.local

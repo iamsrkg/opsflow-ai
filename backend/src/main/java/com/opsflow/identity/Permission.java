@@ -1,0 +1,15 @@
+package com.opsflow.identity;
+
+public enum Permission {
+    REQUEST_CREATE,
+    REQUEST_READ,
+    REQUEST_UPDATE,
+    REQUEST_ASSIGN,
+    REQUEST_ESCALATE,
+    WORKFLOW_APPROVE,
+    WORKFLOW_EXECUTE,
+    AI_INVESTIGATE,
+    AUDIT_READ,
+    KNOWLEDGE_CREATE,
+    KNOWLEDGE_UPDATE
+}

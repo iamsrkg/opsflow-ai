@@ -1,0 +1,6 @@
+id,input,expected_category,expected_priority,notes
+1,"I was charged but my order is pending",PAYMENT,HIGH,payment state mismatch
+2,"The app is down for customers",SERVICE,HIGH,service incident
+3,"I forgot my password",ACCOUNT,MEDIUM,account access
+4,"My hotel booking is missing",BOOKING,MEDIUM,booking issue
+5,"Shipment has not arrived",DELIVERY,MEDIUM,delivery exception
