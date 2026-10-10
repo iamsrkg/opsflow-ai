@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -25,8 +26,8 @@ import java.util.concurrent.TimeUnit;
  * A row is marked PUBLISHED only after the broker has acknowledged it. If the broker can't be
  * reached the row stays PENDING and is tried again on the next run, so an event is never lost
  * and never reported as sent when it wasn't. The same event can therefore be delivered more
- * than once (for example if the app stops between the acknowledgement and the status update),
- * which is why consumers check the event id.
+ * than once (if the app stops between the acknowledgement and the status update, up to one
+ * batch is sent again), which is why consumers check the event id.
  */
 @Component
 public class OutboxPublisher {
@@ -63,15 +64,29 @@ public class OutboxPublisher {
         do {
             pending = outboxRepository.findByStatusOrderByCreatedAtAsc(
                     OutboxEvent.OutboxStatus.PENDING, PageRequest.of(0, BATCH_SIZE));
+            // The batch's new statuses are written together: saving row by row meant one database
+            // round trip per event, and under load the publisher queued for a connection each time.
+            List<OutboxEvent> changed = new ArrayList<>(pending.size());
+            boolean brokerAnswered = true;
             for (OutboxEvent event : pending) {
-                if (!publish(event)) {
-                    return;   // keep the order: don't send later events past one that failed
+                brokerAnswered = publish(event);
+                changed.add(event);
+                if (!brokerAnswered) {
+                    break;   // keep the order: don't send later events past one that failed
                 }
+            }
+            outboxRepository.saveAll(changed);
+            if (!brokerAnswered) {
+                return;
             }
         } while (pending.size() == BATCH_SIZE && System.nanoTime() < stopAt);
     }
 
-    /** @return false if the broker did not acknowledge the event and the batch should stop */
+    /**
+     * Sends one event and sets its new status; the caller saves it.
+     *
+     * @return false if the broker did not acknowledge the event and the batch should stop
+     */
     boolean publish(OutboxEvent event) {
         String message;
         try {
@@ -80,7 +95,6 @@ public class OutboxPublisher {
             // retrying can't fix a payload that doesn't serialize
             event.setStatus(OutboxEvent.OutboxStatus.FAILED);
             event.setErrorMessage(shorten("Could not build the event: " + e.getOriginalMessage()));
-            outboxRepository.save(event);
             logger.error("Outbox event {} can't be serialized and was marked FAILED", event.getEventId(), e);
             return true;   // nothing to wait for; carry on with the next event
         }
@@ -98,7 +112,6 @@ public class OutboxPublisher {
             }
             event.setAttempts(event.getAttempts() + 1);
             event.setErrorMessage(shorten(e.getClass().getSimpleName() + ": " + e.getMessage()));
-            outboxRepository.save(event);
             logger.warn("Kafka did not acknowledge outbox event {} (attempt {}); it stays PENDING",
                     event.getEventId(), event.getAttempts());
             return false;
@@ -107,7 +120,6 @@ public class OutboxPublisher {
         event.setStatus(OutboxEvent.OutboxStatus.PUBLISHED);
         event.setProcessedAt(LocalDateTime.now());
         event.setErrorMessage(null);
-        outboxRepository.save(event);
         return true;
     }
 

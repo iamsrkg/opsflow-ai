@@ -82,6 +82,7 @@ class OutboxPublisherTest {
         assertEquals(OutboxEvent.OutboxStatus.PUBLISHED, event.getStatus());
         assertNotNull(event.getProcessedAt());
         assertNull(event.getErrorMessage());
+        verify(repository).saveAll(List.of(event));
 
         ArgumentCaptor<ProducerRecord<String, String>> sent = ArgumentCaptor.forClass(ProducerRecord.class);
         verify(kafkaTemplate).send(sent.capture());
@@ -123,6 +124,7 @@ class OutboxPublisherTest {
         assertEquals(1, first.getAttempts());
         assertTrue(first.getErrorMessage().contains("broker not available"));
         assertEquals(0, second.getAttempts(), "the second event must not overtake the first");
+        verify(repository).saveAll(List.of(first));   // the failed attempt is recorded; the second row is untouched
         verify(kafkaTemplate, times(1)).send(any(ProducerRecord.class));
     }
 
