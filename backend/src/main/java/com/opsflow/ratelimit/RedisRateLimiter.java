@@ -27,6 +27,7 @@ public class RedisRateLimiter implements RateLimiter {
 
     private static final Logger logger = LoggerFactory.getLogger(RedisRateLimiter.class);
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
     private static final DefaultRedisScript<List> COUNT = new DefaultRedisScript<>("""
             local count = redis.call('INCR', KEYS[1])
             if count == 1 then

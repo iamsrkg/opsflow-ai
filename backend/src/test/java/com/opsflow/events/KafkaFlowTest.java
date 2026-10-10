@@ -1,6 +1,5 @@
 package com.opsflow.events;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.opsflow.notification.Notification;
 import com.opsflow.notification.NotificationRepository;
