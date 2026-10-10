@@ -1,6 +1,20 @@
-# OpsFlow AI
+# OpsFlow AI — AI-assisted business operations and workflow platform
 
 [![CI](https://github.com/iamsrkg/opsflow-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/iamsrkg/opsflow-ai/actions/workflows/ci.yml)
+
+> **OpsFlow AI** is an event-driven platform for business operations. It manages operational requests, enforces their workflow with a state machine, publishes every change reliably to Kafka, investigates each request using the system's own records and a searchable runbook library, and produces evidence-backed recommendations that only take effect once a manager approves them.
+
+## Live demo
+
+**With the real backend, in your browser:** [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/iamsrkg/opsflow-ai?quickstart=1)
+
+One click starts the whole system (dashboard, Spring Boot backend, PostgreSQL with pgvector, Kafka and Redis) in your own GitHub account and opens the dashboard when it is ready. It is free, needs a GitHub login, and the first start takes a few minutes while the images build. Sign in with `manager` / `manager123`, `agent` / `agent123` or `viewer` / `viewer123`.
+
+**On your machine:** `docker compose up --build`, then http://localhost:3000.
+
+**Dashboard preview, no login:** https://iamsrkg.github.io/opsflow-ai/ shows the dashboard on its own with sample data. No backend is connected to that page, and a banner on it says so.
+
+There is no permanently hosted copy of the backend; the Codespaces button and Docker Compose are the two ways to use the real thing.
 
 **In one sentence:** OpsFlow AI is the system an operations team would use to handle customer problems, where every problem follows fixed steps, software suggests the fix, and a person approves it.
 
@@ -15,9 +29,39 @@ It is a backend project. The interesting parts are the guarantees behind those f
 
 **Built with** Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard. 42 tests run against the real services, and CI starts the whole stack and tests it end to end.
 
-## What it is for
+## Real-world use cases
 
-Any team that takes in problems, works out what happened and has to be careful about the fix: payment operations, travel bookings, deliveries, API support. The workflow is the same in each; only the category and the usual fix change. These are the cases the seeded data and the rules cover:
+OpsFlow is for any team that takes in problems, has to work out what happened, and must be careful about the fix. The workflow is the same in each industry; the category, the runbook and the usual fix change.
+
+### 1. E-commerce and payments: a payment that didn't reach the order
+**Problem.** A customer is debited ₹500, but the order still shows `PENDING`.
+
+**What OpsFlow does.**
+1. The request is created in `CREATED` and classified as `PAYMENT`, high priority.
+2. An agent starts the investigation; the request moves to `INVESTIGATING`.
+3. The backend collects the evidence: the request, its audit trail, whether its events were delivered, and the closest runbook, which is the *Payment Synchronization Troubleshooting Runbook*, with its similarity score.
+4. The recommendation is `REPLAY_PAYMENT_EVENT`. That action changes something outside the system, so it needs approval and the request moves to `PENDING_APPROVAL`.
+5. A manager reads the evidence in the approval queue and approves. The request is resolved, and every step is in the audit trail under one correlation id.
+
+### 2. Travel and fintech: a booking that failed after the money was taken
+**Problem.** A flight booking fails at checkout with a timeout, but the customer's wallet was debited.
+
+**What OpsFlow does.** The request is classified as `BOOKING`, high priority. The *Booking Failure & Inventory Recovery Guide* is matched. The recommendation is `RELEASE_INVENTORY_AND_REFUND`, which waits for a manager, because releasing stock and refunding money are not things to do on a guess.
+
+### 3. Logistics: delivered on paper, not in reality
+**Problem.** A courier marks a parcel as delivered; the recipient says it never arrived.
+
+**What OpsFlow does.** The request is classified as `DELIVERY`. The recommendation is `OPEN_COURIER_INVESTIGATION`, sent to a manager for approval. If no runbook is close enough to the request, the evidence says so and the confidence is lower, so the manager knows the recommendation rests on the category alone.
+
+### 4. SaaS and API support: a partner getting gateway timeouts
+**Problem.** A partner's integration receives `504 Gateway Timeout` from the API.
+
+**What OpsFlow does.** The request is classified as `TECHNICAL`, critical. The recommendation is `ESCALATE_TO_ON_CALL`, approved by a manager. The correlation id on every response ties the request's audit entries, log lines and events together for whoever picks it up.
+
+### Anything else
+A request no rule recognises is classified as `OTHER`, and the recommendation is `REQUEST_MORE_INFORMATION`, which needs no approval because it changes nothing.
+
+**At a glance**
 
 | A request like | Is classified as | Recommended action | Manager approval |
 |---|---|---|---|
@@ -27,25 +71,11 @@ Any team that takes in problems, works out what happened and has to be careful a
 | "Our integration gets 504 Gateway Timeout from the API" | `TECHNICAL`, critical | `ESCALATE_TO_ON_CALL` | required |
 | Anything the rules don't recognise | `OTHER` | `REQUEST_MORE_INFORMATION` | not needed |
 
-For each one the backend collects the evidence (the request, its audit trail, whether its events were delivered, the closest runbook), stores the recommendation with that evidence, and waits. Take the first row: the customer paid, the order didn't update. An agent opens the request and runs the investigation; the payment runbook is matched; replaying the payment event is recommended; the request moves to `PENDING_APPROVAL`; a manager reads the evidence and approves or rejects; every step is in the audit trail under one correlation id.
+A test pins this table to the code. One honest limit: approving an action records the decision and resolves the request; no payment, booking or courier system is connected, so nothing is replayed or refunded for real.
 
 ## Try it
 
-**The whole stack, one command** (needs Docker):
-
-```bash
-git clone https://github.com/iamsrkg/opsflow-ai.git
-cd opsflow-ai
-docker compose up --build
-```
-
-Open http://localhost:3000 and sign in with a demo account: `manager` / `manager123`, `agent` / `agent123` or `viewer` / `viewer123`. Each role is allowed different things, so try more than one.
-
-**In the browser, without installing anything:**
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/iamsrkg/opsflow-ai?quickstart=1)
-It starts the same Compose file in your own GitHub account and opens the dashboard when it is ready. The first start takes a few minutes while the images build.
-
-**Dashboard preview:** https://iamsrkg.github.io/opsflow-ai/ is the dashboard on its own. No backend is connected to that page, so it shows sample data and says so in a banner.
+Start it with the Codespaces button or Docker Compose (see **Live demo** above). Each demo account has a different role and is allowed different things, so try more than one.
 
 Things worth trying once it is running:
 
