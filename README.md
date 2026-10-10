@@ -27,7 +27,7 @@ There is no permanently hosted copy of the backend; the Codespaces button and Do
 
 It is a backend project. The interesting parts are the guarantees behind those four lines: the workflow can't be bypassed, two people can't overwrite each other, an event survives Kafka being down, a redelivered event is handled once, and the AI step can't act on its own.
 
-**Built with** Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard. 45 tests run against the real services, CI starts the whole stack and tests it end to end, and a [load test](#load-test) measures it: about 590 requests a second at a p95 of 188 ms on a 4-CPU machine, with all 23,622 events delivered and handled once.
+**Built with** Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard. 45 tests run against the real services, CI starts the whole stack and tests it end to end, the same stack runs on [Kubernetes](#kubernetes) with pod-failure checks, and a [load test](#load-test) measures it: about 590 requests a second at a p95 of 188 ms on a 4-CPU machine, with all 23,622 events delivered and handled once.
 
 ## The problem it solves
 
@@ -183,6 +183,32 @@ The first runs found one bug and two bottlenecks, and each fix was measured with
 
 What is still slow: during the load the consumer handles about 30 events a second, because each event is its own database transaction competing with the API for connections. It catches up within seconds afterwards. A batch listener, or a separate connection pool for the consumer, is the next thing to measure.
 
+## Kubernetes
+
+[`k8s/`](k8s) holds manifests for the same stack, applied with one command:
+
+```bash
+docker build -t opsflow-backend:local backend
+docker build -t opsflow-frontend:local frontend
+kind create cluster --name opsflow          # or any cluster; kind runs one inside Docker
+kind load docker-image opsflow-backend:local opsflow-frontend:local --name opsflow
+kubectl apply -k k8s
+kubectl -n opsflow port-forward svc/frontend 3000:80     # then open http://localhost:3000
+```
+
+| Workload | Kind | Why |
+|---|---|---|
+| PostgreSQL, Kafka | StatefulSet with a volume each | The data has to outlive the pod |
+| Redis | Deployment, no volume | It only holds rate-limit counters that expire within a minute |
+| Backend | Deployment, 1 replica, `Recreate` | The outbox publisher is single-instance, so the old pod stops before the new one starts |
+| Dashboard | Deployment, 2 replicas, rolling update | It keeps no state |
+
+The backend pod has startup, readiness and liveness probes on the Spring Boot health endpoints, CPU and memory requests and a memory limit, graceful shutdown, and runs as a non-root user on a read-only filesystem. Settings come from a ConfigMap; the database credentials and the JWT secret come from a Secret. An init container waits for PostgreSQL and Kafka, so the application starts once and does not crash-loop while they come up.
+
+CI checks this on every push (the `kubernetes` job): it creates a cluster with [kind](https://kind.sigs.k8s.io), applies the manifests, runs the same smoke test as the Compose stack, then runs [`scripts/k8s-check.sh`](scripts/k8s-check.sh), which kills the backend pod and then the database pod and checks that each is replaced, every request is still there, a token issued before the restart is still accepted, and a new request still travels through Kafka to a notification.
+
+What these manifests are not: there is no Ingress, no autoscaler and no network policy, the Secret holds demo values, and PostgreSQL and Kafka are single nodes. They show the application running correctly on Kubernetes; they are not a production cluster design.
+
 ## Run the pieces yourself
 
 Backend alone, with nothing else running (in-memory database, Kafka and Redis switched off, events wait in the outbox):
@@ -241,6 +267,9 @@ backend/src/main/resources/db/migration/   Flyway migrations
 frontend/        React dashboard, Dockerfile, nginx config
 docker-compose.yml   the whole stack
 scripts/smoke.sh     end-to-end check of a running stack
+scripts/k8s-check.sh pod-failure checks on Kubernetes
+k8s/                 Kubernetes manifests (kustomize)
+load-tests/          k6 load test and its runner
 docs/            architecture, decisions, failure scenarios, API
 ```
 
