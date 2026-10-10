@@ -16,13 +16,13 @@ The choices that shaped the code, with what each one costs.
 
 **Why.** Saving to the database and publishing to Kafka are two systems, and one of them can fail after the other succeeded. Publish first and the event can describe a change that was rolled back. Save first and a crash before the publish loses the event. With the outbox there is only one write, to one database, and it either happens or it doesn't.
 
-**Cost.** Events arrive up to a polling interval late (two seconds), and the same event can be delivered more than once: if the application stops after Kafka acknowledged the event but before the row was marked as published, the row is sent again on restart. That is why the consumers are idempotent.
+**Cost.** Events arrive up to a polling interval late (two seconds), and the same event can be delivered more than once: if the application stops after Kafka acknowledged events but before their batch was marked as published, up to one batch of 50 is sent again on restart. That is why the consumers are idempotent.
 
 **Known limit.** The publisher assumes it is the only one. Two instances would both read the same pending rows. Running several needs each one to claim rows with `SELECT … FOR UPDATE SKIP LOCKED`.
 
 ## Mark as published only after the broker's acknowledgement
 
-**Decision.** `OutboxPublisher` waits for the result of each send. On failure the row stays pending, and the rest of the batch waits behind it.
+**Decision.** `OutboxPublisher` waits for the result of each send. On failure the row stays pending, and the rest of the batch waits behind it. Statuses are written once per batch, not once per row: the load test showed that a database write per event made the publisher queue for a connection behind the API, and held it to about 25 events a second.
 
 **Why.** `KafkaTemplate.send` returns before the broker has the record. Marking the row at that point would report events as sent while Kafka was down. Stopping the batch at the first failure keeps a request's events in the order they happened.
 

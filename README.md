@@ -27,7 +27,23 @@ There is no permanently hosted copy of the backend; the Codespaces button and Do
 
 It is a backend project. The interesting parts are the guarantees behind those four lines: the workflow can't be bypassed, two people can't overwrite each other, an event survives Kafka being down, a redelivered event is handled once, and the AI step can't act on its own.
 
-**Built with** Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard. 42 tests run against the real services, and CI starts the whole stack and tests it end to end.
+**Built with** Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard. 45 tests run against the real services, CI starts the whole stack and tests it end to end, and a [load test](#load-test) measures it: about 590 requests a second at a p95 of 188 ms on a 4-CPU machine, with all 23,622 events delivered and handled once.
+
+## The problem it solves
+
+Most teams already handle these problems, just without a system built for it: a ticket in a general tool, an engineer searching logs, a fix agreed in chat. That works until something goes wrong, and then nobody can say who decided what, or why. This is what changes:
+
+| | The usual way, by hand | With OpsFlow |
+|---|---|---|
+| **Tracking** | A ticket whose status anyone can set to anything | A request that can only move through allowed steps; a skipped step is refused |
+| **Two people on one case** | The last save wins and the other change is lost silently | The second save gets `409 Conflict` and has to reload |
+| **Finding out what happened** | Someone searches logs across several systems and looks for the right wiki page | One button collects the request, its history, whether its events were delivered, and the closest runbook |
+| **Choosing the fix** | Depends on who is on shift and what they remember | A recommendation from a fixed list of actions, with the evidence it is based on and a confidence score |
+| **Approving a risky fix** | "OK, go ahead" in a chat message | A manager approves or rejects in the system; an agent who tries gets `403` |
+| **Telling other systems** | A direct call that is lost if the other side is down | An event saved with the change and delivered when Kafka is reachable, handled once |
+| **Answering "who did this, and when?"** | Pieced together afterwards from chat and logs | An audit trail of every step under one correlation id |
+
+The AI step does not replace the person. It does the reading (collecting evidence and finding the runbook) so the person can spend their time on the decision.
 
 ## Real-world use cases
 
@@ -121,13 +137,13 @@ graph LR
 
 ## Tests
 
-`mvn test` in `backend/` runs 42 tests:
+`mvn test` in `backend/` runs 45 tests:
 
 | Test | What it proves |
 |---|---|
 | `KafkaFlowTest` | Against an in-process Kafka broker: a request change is published and consumed into one notification; the same event delivered twice is handled once; an unreadable message goes to the dead-letter topic and the consumer carries on |
-| `OutboxPublisherTest` | Nothing is marked published without an acknowledgement; a failure keeps later events waiting; a broken payload doesn't block the rest |
-| `PostgresAndRedisTest` | Against real PostgreSQL (pgvector) and Redis containers: Flyway builds the schema and Hibernate validates against it, search ranks through pgvector, the sixth login in a minute gets `429` |
+| `OutboxPublisherTest` | Nothing is marked published without an acknowledgement; a failure keeps later events waiting; a broken payload doesn't block the rest; a backlog larger than one batch is cleared in one run |
+| `PostgresAndRedisTest` | Against real PostgreSQL (pgvector) and Redis containers: Flyway builds the schema and Hibernate validates against it, the request list and its search run, search ranks through pgvector, the sixth login in a minute gets `429` |
 | `RequestApiTest` | Through the real security filters: no token, wrong password, role checks, illegal transitions, the stale-edit conflict, the outbox row |
 | `InvestigationFlowTest` | A request from creation to resolution over HTTP, including the agent being refused the approval |
 | `OpenAiCompatibleProviderTest` | What is sent to the model, and that a failed call or an unreadable answer falls back to the rules |
@@ -136,6 +152,36 @@ graph LR
 The container tests skip themselves on a machine without Docker and run in CI.
 
 CI also builds both Docker images, starts the whole stack with Compose and runs [`scripts/smoke.sh`](scripts/smoke.sh) against it from the outside: sign-in, a request through Kafka to a notification, pgvector search, the approval rules and the rate limit. It then stops Kafka, checks that a new request is still accepted and its event waits in the outbox, starts Kafka again and checks that the backlog drains.
+
+## Load test
+
+[`load-tests/`](load-tests) holds a [k6](https://k6.io) script and a runner, and the [Load test workflow](.github/workflows/load-test.yml) runs them on demand against the full Docker Compose stack. Each of 50 virtual users repeats what an operator does, with no pause: create a request, read it back, list requests, move it one step. Every create and every step also writes an event, so the same run measures how the outbox and the consumer keep up.
+
+Measured on a GitHub-hosted runner (4 CPUs, 15 GB of memory, AMD EPYC 7763) with the load generator, backend, PostgreSQL, Kafka and Redis all sharing that one machine, the rate limiter switched off, 15 s ramp-up and 60 s at 50 users:
+
+| | Result |
+|---|---|
+| Requests | 47,245, none failed |
+| Throughput | 590 requests a second |
+| Latency | median 60 ms, p95 188 ms, p99 294 ms |
+| p95 by call | create 192 ms, read 146 ms, list 187 ms, transition 211 ms |
+| Events | 23,622 published and 23,622 consumed: none lost, none handled twice |
+| Outbox backlog | peaked at 9,026 events during the load, empty 18 s after it stopped |
+
+Across three runs on these runners the API did 414 to 647 requests a second with a p95 of 146 to 225 ms. Runners differ from one run to the next, so treat the figures as the size of the number, not a benchmark.
+
+### What the load test changed
+
+The first runs found one bug and two bottlenecks, and each fix was measured with the same test:
+
+| Run | What it showed | Change | Backlog cleared after the load stopped |
+|---|---|---|---|
+| 1 | One request in four failed: the request list broke on PostgreSQL when no search text was given (H2 accepted the query) | Build the search pattern in the service; test it against real PostgreSQL | |
+| 2 | No failures. The outbox published one batch of 50 per two-second poll, 25 events a second, and the backlog reached 15,741 | Keep taking batches until the outbox is empty | 653 s |
+| 3 | The backlog cleared quickly once the load stopped, but during the load the publisher still managed about 25 a second: it saved each row on its own and queued for a database connection every time | Save a batch's statuses together | 38 s |
+| 4 | Publishing during the load rose to about 170 events a second | | 18 s |
+
+What is still slow: during the load the consumer handles about 30 events a second, because each event is its own database transaction competing with the API for connections. It catches up within seconds afterwards. A batch listener, or a separate connection pool for the consumer, is the next thing to measure.
 
 ## Run the pieces yourself
 
@@ -170,6 +216,7 @@ Settings, all optional:
 - **Not a real embedding model.** Runbook search matches shared words. See "Runbook search" above.
 - **One consumer.** Notifications are the only thing consuming the events so far.
 - **No tracing system.** Correlation ids tie logs, audit entries and events together, but there are no spans or OpenTelemetry export.
+- **Events are not instant under heavy load.** At the API's limit the outbox and the consumer fall behind and catch up afterwards; see the load test.
 - **The outbox publisher is single-instance.** Two copies of the application would both read the same pending rows. Running more than one needs row claiming (`SELECT … FOR UPDATE SKIP LOCKED`).
 - **Approved actions are recorded, not executed.** Approving moves the request to resolved; there is no payment system behind `REPLAY_PAYMENT_EVENT`.
 - **Demo accounts are seeded** with known passwords, and the JWT secret has a development default. Both must be changed for anything beyond a demo.
