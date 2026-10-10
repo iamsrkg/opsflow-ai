@@ -2,11 +2,18 @@
 
 [![CI](https://github.com/iamsrkg/opsflow-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/iamsrkg/opsflow-ai/actions/workflows/ci.yml)
 
-A backend for handling operational requests, such as a payment that was charged but never confirmed, as a workflow. Each request moves through fixed states, every change is published to Kafka through a transactional outbox, an AI step investigates and recommends an action, and anything that changes the outside world waits for a manager's approval.
+**In one sentence:** OpsFlow AI is the system an operations team would use to handle customer problems, where every problem follows fixed steps, software suggests the fix, and a person approves it.
 
-Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard.
+**In a little more detail.** A customer reports "I was charged but my order still says pending". Someone has to find out what happened and decide what to do, and the fix (replaying a payment, refunding, re-dispatching a parcel) is not something to get wrong. OpsFlow gives that work a shape:
 
-I built it to work through the parts of a backend that are easy to get wrong: state transitions, concurrent edits, events that must not be lost or handled twice, and keeping an AI suggestion from acting on its own.
+1. The problem becomes a **request** with a status, and it can only move through allowed steps.
+2. An **investigation** collects the facts and recommends an action. This is the "AI" in the name: it can read, and it can suggest, and nothing more.
+3. A **manager approves or rejects** the action. Until then nothing happens.
+4. Every step is **recorded**, and every change is **published as an event** that other systems can react to, without ever being lost or handled twice.
+
+It is a backend project. The interesting parts are the guarantees behind those four lines: the workflow can't be bypassed, two people can't overwrite each other, an event survives Kafka being down, a redelivered event is handled once, and the AI step can't act on its own.
+
+**Built with** Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard. 42 tests run against the real services, and CI starts the whole stack and tests it end to end.
 
 ## What it is for
 

@@ -36,6 +36,84 @@ graph TD
 
 Steps 1 to 3 happen while the caller waits. Steps 4 and 5 happen afterwards, so a slow or unavailable Kafka never slows down or fails the API call.
 
+## The life of a request, in sequence
+
+Creating and assigning a request, and what follows from it:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Agent
+    participant API as Spring Boot API
+    participant DB as PostgreSQL
+    participant Pub as OutboxPublisher
+    participant K as Kafka
+    participant C as NotificationConsumer
+
+    Agent->>API: POST /requests/42/assign (JWT)
+    API->>API: rate limit, authenticate, check role
+    rect rgb(235, 245, 255)
+    note over API,DB: one database transaction
+    API->>DB: update request (version + 1)
+    API->>DB: insert history row and audit row
+    API->>DB: insert outbox row (PENDING, eventId)
+    end
+    API-->>Agent: 200, with X-Correlation-ID
+    loop every 2 seconds
+        Pub->>DB: read PENDING rows, oldest first
+        Pub->>K: send (key = request id)
+        K-->>Pub: acknowledgement
+        Pub->>DB: mark PUBLISHED
+    end
+    K->>C: deliver event
+    rect rgb(235, 245, 255)
+    note over C,DB: one database transaction
+    C->>DB: was this eventId handled by this group?
+    C->>DB: insert notification
+    C->>DB: insert processed-event row
+    end
+    C-->>K: offset committed
+```
+
+Investigating and approving:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Agent
+    actor Manager
+    participant API as Spring Boot API
+    participant Tools as AIToolRegistry (read only)
+    participant P as AI provider
+    participant Policy as ActionPolicy
+
+    Agent->>API: POST /requests/42/investigate
+    API->>API: classify if never classified, move to INVESTIGATING
+    API->>Tools: request, audit trail, events, closest runbooks
+    Tools-->>API: evidence (facts from the database)
+    API->>P: recommend(evidence)
+    P-->>API: summary, likely cause, action, confidence
+    API->>Policy: is the action known? does it need approval?
+    alt needs approval
+        API->>API: create approval, move to PENDING_APPROVAL
+    else no approval needed
+        API->>API: stay in INVESTIGATING
+    end
+    API-->>Agent: the investigation, with its evidence
+    Manager->>API: POST /approvals/7/approve
+    API->>API: role check (manager or admin only)
+    API->>API: ACTION_IN_PROGRESS, then RESOLVED
+    API-->>Manager: 200
+```
+
+## What happens at startup
+
+1. **Flyway** runs any migration that hasn't run yet (PostgreSQL profile).
+2. **Hibernate** validates every entity against the schema and stops the application if they disagree.
+3. **`DataInitializer`** seeds the demo users, runbooks and sample requests if the tables are empty.
+4. **`VectorStoreService`** gives every runbook chunk without an embedding one.
+5. **Kafka**: if enabled, the topics and their dead-letter topics are created and the consumer starts; the outbox publisher begins polling.
+
 ## Modules
 
 | Package | Responsibility |
