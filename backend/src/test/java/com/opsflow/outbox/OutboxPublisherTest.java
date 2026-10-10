@@ -9,6 +9,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.kafka.core.KafkaTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -87,6 +88,25 @@ class OutboxPublisherTest {
         assertEquals("opsflow.request.events", sent.getValue().topic());
         assertEquals("42", sent.getValue().key(), "keyed by aggregate id, so one request's events stay in order");
         assertTrue(sent.getValue().value().contains("\"eventId\":\"evt-1\""), "the event id travels in the message");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aBacklogLargerThanOneBatchIsClearedInOneRun() {
+        List<OutboxEvent> backlog = new ArrayList<>();
+        for (int i = 1; i <= 120; i++) {
+            backlog.add(pending("evt-" + i, "{}"));
+        }
+        // like the real query: the oldest 50 rows that are still PENDING
+        when(repository.findByStatusOrderByCreatedAtAsc(eq(OutboxEvent.OutboxStatus.PENDING), any(Pageable.class)))
+                .thenAnswer(call -> backlog.stream()
+                        .filter(e -> e.getStatus() == OutboxEvent.OutboxStatus.PENDING).limit(50).toList());
+        brokerAcknowledges();
+
+        publisher(true).publishPendingEvents();
+
+        assertTrue(backlog.stream().allMatch(e -> e.getStatus() == OutboxEvent.OutboxStatus.PUBLISHED));
+        verify(kafkaTemplate, times(120)).send(any(ProducerRecord.class));
     }
 
     @Test

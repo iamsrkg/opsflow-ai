@@ -34,6 +34,7 @@ public class OutboxPublisher {
     private static final Logger logger = LoggerFactory.getLogger(OutboxPublisher.class);
     private static final int BATCH_SIZE = 50;
     private static final long ACK_TIMEOUT_SECONDS = 5;
+    private static final long MAX_RUN_NANOS = TimeUnit.SECONDS.toNanos(10);
 
     private final OutboxRepository outboxRepository;
     private final KafkaTemplate<String, String> kafkaTemplate;
@@ -55,14 +56,19 @@ public class OutboxPublisher {
         if (!kafkaEnabled) {
             return;   // no broker configured: events wait in the outbox
         }
-        List<OutboxEvent> pending = outboxRepository.findByStatusOrderByCreatedAtAsc(
-                OutboxEvent.OutboxStatus.PENDING, PageRequest.of(0, BATCH_SIZE));
-
-        for (OutboxEvent event : pending) {
-            if (!publish(event)) {
-                break;   // keep the order: don't send later events past one that failed
+        // Keep taking batches until the outbox is empty. Stopping after one batch would cap
+        // publishing at one batch per poll (25 events a second), however fast the broker is.
+        long stopAt = System.nanoTime() + MAX_RUN_NANOS;
+        List<OutboxEvent> pending;
+        do {
+            pending = outboxRepository.findByStatusOrderByCreatedAtAsc(
+                    OutboxEvent.OutboxStatus.PENDING, PageRequest.of(0, BATCH_SIZE));
+            for (OutboxEvent event : pending) {
+                if (!publish(event)) {
+                    return;   // keep the order: don't send later events past one that failed
+                }
             }
-        }
+        } while (pending.size() == BATCH_SIZE && System.nanoTime() < stopAt);
     }
 
     /** @return false if the broker did not acknowledge the event and the batch should stop */
