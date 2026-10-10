@@ -1,0 +1,23 @@
+# PostgreSQL profile: start with SPRING_PROFILES_ACTIVE=prod (see infrastructure/docker-compose.yml)
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:opsflow_db}
+    username: ${DB_USER:opsflow_user}
+    password: ${DB_PASS:opsflow_pass}
+    driver-class-name: org.postgresql.Driver
+  h2:
+    console:
+      enabled: false
+  flyway:
+    enabled: true
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+
+server:
+  forward-headers-strategy: native   # behind a proxy, take the client address from X-Forwarded-For
+
+opsflow:
+  vector:
+    store: pgvector

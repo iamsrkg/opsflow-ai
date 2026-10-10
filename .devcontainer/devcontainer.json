@@ -1,0 +1,14 @@
+{
+  // Opens the full stack in GitHub Codespaces: the same docker-compose.yml the CI job runs.
+  "name": "OpsFlow AI",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postStartCommand": "docker compose up --build -d",
+  "forwardPorts": [3000, 8080],
+  "portsAttributes": {
+    "3000": { "label": "Dashboard", "onAutoForward": "openBrowser" },
+    "8080": { "label": "API", "onAutoForward": "silent" }
+  }
+}
