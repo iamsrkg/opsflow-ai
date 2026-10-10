@@ -28,6 +28,9 @@ spec:
         app: backend
     spec:
       terminationGracePeriodSeconds: 40
+      # Kubernetes would otherwise inject REDIS_PORT=tcp://10.x.x.x:6379 for the redis Service,
+      # and the application reads REDIS_PORT as a port number.
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
