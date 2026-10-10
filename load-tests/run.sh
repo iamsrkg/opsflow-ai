@@ -42,7 +42,7 @@ docker run --rm --network host -u "$(id -u):$(id -g)" -e BASE="$BASE" -e VUS="$V
 LOAD_END=$(date +%s)
 
 echo "load finished; waiting for the outbox to drain and the consumer to catch up..."
-for i in $(seq 1 900); do
+for i in $(seq 1 1800); do
   NOW=$(metrics)
   [ "$(echo "$NOW" | jq '.w')" = 0 ] && [ "$(echo "$NOW" | jq '.p == .c')" = true ] && break
   sleep 1

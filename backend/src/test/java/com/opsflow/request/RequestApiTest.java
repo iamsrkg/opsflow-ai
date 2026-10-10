@@ -90,6 +90,23 @@ class RequestApiTest {
     }
 
     @Test
+    void theListCanBeSearchedWithoutCaringAboutCase() throws Exception {
+        String agent = tokenFor("agent");
+        JsonNode created = createRequest(agent);
+
+        mvc.perform(get("/api/v1/requests").header("Authorization", agent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").isNotEmpty());
+        mvc.perform(get("/api/v1/requests").param("query", "ORDER STILL pending").param("size", "100")
+                        .header("Authorization", agent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[?(@.id == " + created.get("id").asLong() + ")]").exists());
+        mvc.perform(get("/api/v1/requests").param("query", "no request says this").header("Authorization", agent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(0));
+    }
+
+    @Test
     void aViewerCanReadButCannotChangeARequest() throws Exception {
         JsonNode created = createRequest(tokenFor("agent"));
         String viewer = tokenFor("viewer");

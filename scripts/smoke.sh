@@ -65,6 +65,11 @@ CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/approvals/$APPROVAL/
 curl -fsS -X POST "$API/approvals/$APPROVAL/approve" -H "Authorization: Bearer $MANAGER" -H 'Content-Type: application/json' -d '{"comment":"smoke test"}' > /dev/null
 STATUS=$(curl -fsS "$API/requests/$ID" -H "Authorization: Bearer $AGENT" | jq -r '.data.status')
 [ "$STATUS" = "RESOLVED" ] || fail "expected RESOLVED, got $STATUS"
+LISTED=$(curl -fsS "$API/requests?size=5" -H "Authorization: Bearer $AGENT" | jq '.data.content | length')
+[ "$LISTED" -ge 1 ] || fail "the request list came back empty"
+FOUND=$(curl -fsS "$API/requests?query=CHARGED" -H "Authorization: Bearer $AGENT" | jq '.data.totalElements')
+[ "$FOUND" -ge 1 ] || fail "searching the list for CHARGED found nothing"
+echo "list: $LISTED on the first page, search for CHARGED: $FOUND"
 echo "$ACTION recommended -> 403 for the agent -> approved by the manager -> $STATUS"
 
 # Only where this script can control the containers (CI sets WITH_OUTAGE=1).

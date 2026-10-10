@@ -24,8 +24,8 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
            "(:status IS NULL OR r.status = :status) AND " +
            "(:category IS NULL OR r.category = :category) AND " +
            "(:priority IS NULL OR r.priority = :priority) AND " +
-           "(:query IS NULL OR LOWER(r.title) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(r.description) LIKE LOWER(CONCAT('%', :query, '%')))")
-    Page<Request> searchRequests(RequestStatus status, Category category, Priority priority, String query, Pageable pageable);
+           "(:pattern IS NULL OR LOWER(r.title) LIKE :pattern OR LOWER(r.description) LIKE :pattern)")
+    Page<Request> searchRequests(RequestStatus status, Category category, Priority priority, String pattern, Pageable pageable);
 
     long countByStatus(RequestStatus status);
 

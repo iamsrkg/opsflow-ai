@@ -1,5 +1,6 @@
 package com.opsflow.infrastructure;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.opsflow.knowledge.VectorStoreService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,8 +22,10 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -76,6 +79,22 @@ class PostgresAndRedisTest {
 
         assertFalse(results.isEmpty());
         assertTrue(results.get(0).getDocumentTitle().contains("Payment"), "got: " + results.get(0).getDocumentTitle());
+    }
+
+    @Test
+    void listingAndSearchingRequestsWorksOnPostgres() throws Exception {
+        // no filters at all: every parameter of the search query is null
+        String body = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"agent\",\"password\":\"agent123\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String token = "Bearer " + new ObjectMapper().readTree(body).get("data").get("accessToken").asText();
+
+        mvc.perform(get("/api/v1/requests").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").isNotEmpty());
+        mvc.perform(get("/api/v1/requests").param("query", "PAYMENT").header("Authorization", token))
+                .andExpect(status().isOk());
     }
 
     @Test

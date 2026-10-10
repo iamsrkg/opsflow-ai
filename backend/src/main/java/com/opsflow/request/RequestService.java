@@ -155,7 +155,10 @@ public class RequestService {
 
     @Transactional(readOnly = true)
     public Page<RequestResponseDTO> searchRequests(RequestStatus status, Category category, Priority priority, String query, Pageable pageable) {
-        return requestRepository.searchRequests(status, category, priority, query, pageable)
+        // The pattern is built here, not in the query: PostgreSQL can't tell what type a null
+        // parameter is once it is wrapped in lower(concat(...)), and the query fails.
+        String pattern = (query == null || query.isBlank()) ? null : "%" + query.trim().toLowerCase() + "%";
+        return requestRepository.searchRequests(status, category, priority, pattern, pageable)
                 .map(this::mapToDTO);
     }
 
