@@ -82,6 +82,10 @@ class InvestigationFlowTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"comment\":\"ok\"}"))
                 .andExpect(status().isOk());
         assertEquals("RESOLVED", statusOf(id, agent));
+
+        mvc.perform(post("/api/v1/approvals/" + approval.getId() + "/approve").header("Authorization", tokenFor("manager"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isConflict());   // approving it a second time changes nothing
     }
 
     @Test
