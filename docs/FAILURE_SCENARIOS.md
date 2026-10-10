@@ -4,7 +4,7 @@ Each row is a behaviour of the code as it is, and where it is tested.
 
 | What goes wrong | What the system does | Tested in |
 |---|---|---|
-| Kafka is down when a request changes | The API call still succeeds. The event stays `PENDING` in the outbox and is sent, in order, when Kafka is back. | `OutboxPublisherTest`, `RequestApiTest` |
+| Kafka is down when a request changes | The API call still succeeds. The event stays `PENDING` in the outbox and is sent, in order, when Kafka is back. | `OutboxPublisherTest`, `RequestApiTest`, and `scripts/smoke.sh` in CI, which stops the Kafka container and starts it again |
 | The application stops after Kafka acknowledged an event but before the row was marked published | The event is sent again on restart. The consumer recognises the id and skips it. | `KafkaFlowTest` (duplicate delivery) |
 | The same event is delivered twice | It is handled once: one notification, one processed-event row. | `KafkaFlowTest` |
 | A message on the topic can't be parsed | It goes straight to `<topic>.DLT`. The consumer continues with the next message. | `KafkaFlowTest` |

@@ -61,6 +61,29 @@ STATUS=$(curl -fsS "$API/requests/$ID" -H "Authorization: Bearer $AGENT" | jq -r
 [ "$STATUS" = "RESOLVED" ] || fail "expected RESOLVED, got $STATUS"
 echo "$ACTION recommended -> 403 for the agent -> approved by the manager -> $STATUS"
 
+# Only where this script can control the containers (CI sets WITH_OUTAGE=1).
+if [ "${WITH_OUTAGE:-0}" = 1 ]; then
+  step "Kafka goes away: the API keeps working and the event waits in the outbox"
+  pending() { curl -fsS "$API/analytics/dashboard" -H "Authorization: Bearer $AGENT" | jq '.data.outboxPending'; }
+  docker compose stop kafka > /dev/null 2>&1
+  curl -fsS -X POST "$API/requests" -H "Authorization: Bearer $AGENT" -H 'Content-Type: application/json' \
+    -d '{"title":"Created while Kafka was down","description":"The API must accept this and keep its event until the broker is back."}' > /dev/null
+  sleep 12
+  WAITING=$(pending)
+  [ "$WAITING" -gt 0 ] || fail "with Kafka down the event should be waiting, but the backlog is $WAITING"
+  echo "request accepted; outbox backlog while Kafka is down: $WAITING"
+
+  step "Kafka comes back: the backlog drains and nothing is lost"
+  docker compose start kafka > /dev/null 2>&1
+  for i in $(seq 1 60); do
+    WAITING=$(pending)
+    [ "$WAITING" = 0 ] && break
+    [ "$i" = 60 ] && fail "the backlog did not drain after Kafka came back (still $WAITING)"
+    sleep 3
+  done
+  echo "backlog back to 0"
+fi
+
 step "the login rate limit (Redis)"
 LAST=200
 for i in $(seq 1 12); do

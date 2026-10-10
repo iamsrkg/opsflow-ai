@@ -16,7 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose up --build -d
-      - run: bash scripts/smoke.sh
+      # WITH_OUTAGE also stops Kafka mid-run and checks that the event waits and is delivered afterwards
+      - run: WITH_OUTAGE=1 bash scripts/smoke.sh
       - if: failure()
         run: docker compose logs --tail=200
       - if: always()
