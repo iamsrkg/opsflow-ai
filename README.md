@@ -33,45 +33,32 @@ It is a backend project. The interesting parts are the guarantees behind those f
 
 OpsFlow is for any team that takes in problems, has to work out what happened, and must be careful about the fix. The workflow is the same in each industry; the category, the runbook and the usual fix change.
 
-### 1. E-commerce and payments: a payment that didn't reach the order
-**Problem.** A customer is debited ₹500, but the order still shows `PENDING`.
+| Industry | The problem | OpsFlow classifies it as | Evidence it gathers | Recommended action | Who decides |
+|---|---|---|---|---|---|
+| **E-commerce and payments** | A customer is debited ₹500 but the order still shows `PENDING` | `PAYMENT`, high priority | The request, its audit trail, whether its events were delivered, and the *Payment Synchronization Troubleshooting Runbook* with its similarity score | `REPLAY_PAYMENT_EVENT` | A manager must approve |
+| **Travel and fintech** | A flight booking fails at checkout with a timeout, but the wallet was debited | `BOOKING`, high priority | The same, with the *Booking Failure & Inventory Recovery Guide* | `RELEASE_INVENTORY_AND_REFUND` | A manager must approve |
+| **Logistics and last-mile delivery** | A courier marks a parcel delivered; the recipient never received it | `DELIVERY`, medium priority | The same; if no runbook is close enough, the evidence says so and the confidence is lower | `OPEN_COURIER_INVESTIGATION` | A manager must approve |
+| **SaaS and API support** | A partner integration gets `504 Gateway Timeout` | `TECHNICAL`, critical priority | The same, tied together by the correlation id on every response | `ESCALATE_TO_ON_CALL` | A manager must approve |
+| **Anything else** | A request no rule recognises | `OTHER` | The same | `REQUEST_MORE_INFORMATION` | Nobody; it changes nothing |
 
-**What OpsFlow does.**
-1. The request is created in `CREATED` and classified as `PAYMENT`, high priority.
-2. An agent starts the investigation; the request moves to `INVESTIGATING`.
-3. The backend collects the evidence: the request, its audit trail, whether its events were delivered, and the closest runbook, which is the *Payment Synchronization Troubleshooting Runbook*, with its similarity score.
-4. The recommendation is `REPLAY_PAYMENT_EVENT`. That action changes something outside the system, so it needs approval and the request moves to `PENDING_APPROVAL`.
-5. A manager reads the evidence in the approval queue and approves. The request is resolved, and every step is in the audit trail under one correlation id.
+A test pins this table to the code (`RuleBasedAIProviderTest`).
 
-### 2. Travel and fintech: a booking that failed after the money was taken
-**Problem.** A flight booking fails at checkout with a timeout, but the customer's wallet was debited.
+### One case, start to finish
 
-**What OpsFlow does.** The request is classified as `BOOKING`, high priority. The *Booking Failure & Inventory Recovery Guide* is matched. The recommendation is `RELEASE_INVENTORY_AND_REFUND`, which waits for a manager, because releasing stock and refunding money are not things to do on a guess.
+"I was charged ₹500 but my order still says payment pending."
 
-### 3. Logistics: delivered on paper, not in reality
-**Problem.** A courier marks a parcel as delivered; the recipient says it never arrived.
-
-**What OpsFlow does.** The request is classified as `DELIVERY`. The recommendation is `OPEN_COURIER_INVESTIGATION`, sent to a manager for approval. If no runbook is close enough to the request, the evidence says so and the confidence is lower, so the manager knows the recommendation rests on the category alone.
-
-### 4. SaaS and API support: a partner getting gateway timeouts
-**Problem.** A partner's integration receives `504 Gateway Timeout` from the API.
-
-**What OpsFlow does.** The request is classified as `TECHNICAL`, critical. The recommendation is `ESCALATE_TO_ON_CALL`, approved by a manager. The correlation id on every response ties the request's audit entries, log lines and events together for whoever picks it up.
-
-### Anything else
-A request no rule recognises is classified as `OTHER`, and the recommendation is `REQUEST_MORE_INFORMATION`, which needs no approval because it changes nothing.
-
-**At a glance**
-
-| A request like | Is classified as | Recommended action | Manager approval |
+| Step | Who | What happens | Request status |
 |---|---|---|---|
-| "Charged ₹500 but my order still says payment pending" | `PAYMENT`, high | `REPLAY_PAYMENT_EVENT` | required |
-| "Flight booking failed at checkout but my account was debited" | `BOOKING`, high | `RELEASE_INVENTORY_AND_REFUND` | required |
-| "Driver marked the order delivered, the customer never received it" | `DELIVERY`, medium | `OPEN_COURIER_INVESTIGATION` | required |
-| "Our integration gets 504 Gateway Timeout from the API" | `TECHNICAL`, critical | `ESCALATE_TO_ON_CALL` | required |
-| Anything the rules don't recognise | `OTHER` | `REQUEST_MORE_INFORMATION` | not needed |
+| 1 | Agent | Creates the request. The change and its event are saved in one transaction. | `CREATED` |
+| 2 | System | Classifies it as a payment problem, high priority. | `CLASSIFIED` |
+| 3 | Agent | Presses **Investigate**. | `INVESTIGATING` |
+| 4 | System | Collects the evidence and matches the payment runbook. | `INVESTIGATING` |
+| 5 | System | Recommends `REPLAY_PAYMENT_EVENT`. The policy says that action needs approval. | `PENDING_APPROVAL` |
+| 6 | Agent | Tries to approve it and is refused with `403`. | `PENDING_APPROVAL` |
+| 7 | Manager | Reads the evidence and approves. | `ACTION_IN_PROGRESS`, then `RESOLVED` |
+| 8 | System | Every step is in the audit trail under one correlation id, and each change went to Kafka as an event. | `RESOLVED` |
 
-A test pins this table to the code. One honest limit: approving an action records the decision and resolves the request; no payment, booking or courier system is connected, so nothing is replayed or refunded for real.
+One honest limit: approving an action records the decision and resolves the request. No payment, booking or courier system is connected, so nothing is replayed or refunded for real.
 
 ## Try it
 
