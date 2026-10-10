@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  # One replica, replaced by stopping the old pod first. The outbox publisher is single-instance:
+  # two pods would both send the same pending events. Running more needs row claiming first
+  # (SELECT ... FOR UPDATE SKIP LOCKED), as the README says.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      # Flyway needs the database and the topics need the broker, so wait for both
+      # and start once, not crash and restart until they are there.
+      initContainers:
+        - name: wait-for-postgres-and-kafka
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z postgres 5432 && nc -z kafka 9092; do echo waiting; sleep 2; done"]
+          securityContext:
+            allowPrivilegeEscalation: false
+      containers:
+        - name: backend
+          image: opsflow-backend
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef: {name: backend-config}
+            - secretRef: {name: opsflow-secrets}
+          # startup: give the JVM, Flyway and the seed data time before the other probes count
+          startupProbe:
+            httpGet: {path: /actuator/health/liveness, port: 8080}
+            periodSeconds: 5
+            failureThreshold: 60
+          # readiness: no traffic until the application says it can take it
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: 8080}
+            periodSeconds: 5
+          # liveness: restart a pod that has stopped answering
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: 8080}
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp   # the only place the application writes
+      volumes:
+        - name: tmp
+          emptyDir: {}

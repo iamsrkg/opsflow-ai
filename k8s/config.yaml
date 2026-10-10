@@ -1,0 +1,29 @@
+# Settings every backend pod reads. Nothing secret in here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  SPRING_PROFILES_ACTIVE: prod
+  DB_HOST: postgres
+  DB_NAME: opsflow_db
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_ENABLED: "true"
+  REDIS_HOST: redis
+  RATE_LIMIT_ENABLED: "true"
+  AI_PROVIDER: rules
+  SERVER_SHUTDOWN: graceful                          # finish requests in flight before the pod stops
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"  # /actuator/health/liveness and /readiness
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75         # size the heap from the container memory limit
+---
+# Demo values, so the stack starts with one command. They are in a public repository: for
+# anything real, create this Secret outside git (kubectl create secret, or a secrets manager).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: opsflow-secrets
+type: Opaque
+stringData:
+  DB_USER: opsflow_user
+  DB_PASS: opsflow_pass
+  OPSFLOW_SECURITY_JWT_SECRET: 6B38782F413F4428472B4B6250655368566D597133743677397A244326452948

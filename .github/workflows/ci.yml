@@ -35,6 +35,37 @@ jobs:
           runCmd: |
             command -v jq > /dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq jq)
             bash scripts/smoke.sh
+  # Applies k8s/ to a throwaway Kubernetes cluster (kind), runs the same smoke test against it,
+  # then kills the backend pod and the database pod and checks that both come back with the data.
+  kubernetes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker build -q -t opsflow-backend:local backend
+          docker build -q -t opsflow-frontend:local frontend
+      - uses: helm/kind-action@v1
+        with: {cluster_name: opsflow}
+      - run: kind load docker-image opsflow-backend:local opsflow-frontend:local --name opsflow
+      - run: kubectl apply -k k8s
+      - name: Wait for every workload
+        run: |
+          kubectl -n opsflow rollout status statefulset/postgres --timeout=300s
+          kubectl -n opsflow rollout status statefulset/kafka --timeout=300s
+          kubectl -n opsflow rollout status deploy/redis --timeout=300s
+          kubectl -n opsflow rollout status deploy/backend --timeout=420s
+          kubectl -n opsflow rollout status deploy/frontend --timeout=300s
+      - name: Smoke test, then pod-failure checks
+        run: |
+          (while true; do kubectl -n opsflow port-forward svc/frontend 3000:80 > /dev/null 2>&1; sleep 1; done) &
+          bash scripts/smoke.sh
+          bash scripts/k8s-check.sh
+      - if: failure()
+        run: |
+          kubectl -n opsflow get all,pvc
+          kubectl -n opsflow describe pods | tail -120
+          kubectl -n opsflow logs deploy/backend --all-containers --tail=150 || true
+          kubectl -n opsflow logs statefulset/kafka --tail=60 || true
   frontend:
     runs-on: ubuntu-latest
     steps:
