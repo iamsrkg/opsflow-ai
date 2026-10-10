@@ -15,7 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Machine
-        run: echo "$(nproc) CPUs, $(free -g | awk '/Mem:/{print $2}') GB memory, $(lscpu | sed -n 's/Model name: *//p')"
+        run: |
+          echo "$(nproc) CPUs, $(free -g | awk '/Mem:/{print $2}') GB memory"
+          lscpu | grep 'Model name'
       - run: docker compose -f docker-compose.yml -f load-tests/docker-compose.loadtest.yml up --build -d
       - name: Run
         run: VUS=${{ inputs.vus }} bash load-tests/run.sh
