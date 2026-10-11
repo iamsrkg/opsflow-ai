@@ -33,7 +33,7 @@ public class ModelEmbedder implements TextEmbedder {
                          @Value("${opsflow.embedding.api-key:${opsflow.ai.api-key:}}") String apiKey,
                          @Value("${opsflow.embedding.model:all-minilm}") String model,
                          @Value("${opsflow.embedding.dimensions:384}") int dimensions,
-                         @Value("${opsflow.embedding.minimum-score:0.3}") double minimumScore) {
+                         @Value("${opsflow.embedding.minimum-score:0.2}") double minimumScore) {
         this.http = builder.baseUrl(baseUrl).defaultHeader("Authorization", "Bearer " + apiKey).build();
         this.model = model;
         this.dimensions = dimensions;
