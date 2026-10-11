@@ -111,7 +111,7 @@ sequenceDiagram
 1. **Flyway** runs any migration that hasn't run yet (PostgreSQL profile).
 2. **Hibernate** validates every entity against the schema and stops the application if they disagree.
 3. **`DataInitializer`** seeds the demo users, runbooks and sample requests if the tables are empty.
-4. **`VectorStoreService`** gives every runbook chunk without an embedding one.
+4. **`VectorStoreService`** gives every runbook chunk without an embedding one. Only after this does the application report ready, so `/actuator/health` is not UP while the index is still being built.
 5. **Kafka**: if enabled, the topics and their dead-letter topics are created and the consumer starts; the outbox publisher begins polling.
 
 ## Modules
@@ -140,7 +140,7 @@ The tables that carry the design:
 - `requests` has a `version` column for optimistic locking.
 - `outbox_events` has a unique `event_id`, a `status` and an `attempts` counter.
 - `processed_events` has a unique constraint on `(event_id, consumer_group)`. That constraint is what makes handling an event twice impossible, even if two consumers race.
-- `knowledge_chunks` has an `embedding vector(256)` column with an HNSW index for cosine distance.
+- `knowledge_chunks` has an `embedding vector(256)` column (feature hashing) and an `embedding_model vector(384)` column (an embedding model), each with an HNSW index for cosine distance, and `embedding_model_name` to record which model made the vector.
 
 ## Two ways to run it
 

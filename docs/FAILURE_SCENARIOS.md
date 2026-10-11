@@ -16,6 +16,9 @@ Each row is a behaviour of the code as it is, and where it is tested.
 | The language model is unreachable or answers with something unreadable | The rule-based provider answers in its place. | `OpenAiCompatibleProviderTest` |
 | The model recommends an action that doesn't exist | The recommendation is stored as `NEEDS_HUMAN_REVIEW`. | `AIInvestigationService`, `ActionPolicy` |
 | Redis is down | Requests are not rate limited, and are otherwise unaffected. A warning is logged. | `RedisRateLimiter` |
+| The embedding model is down | Search returns nothing, the investigation continues with "no runbook matched", and a warning is logged. | Handled in `VectorStoreService`; no test of its own |
+| The language model is down, slow or answers with something unusable | The rules answer, and the investigation is marked as a fallback. Model calls have connect and read timeouts. | `OpenAiCompatibleProviderTest` |
+| The model names an action that is not on the list | It is replaced with `NEEDS_HUMAN_REVIEW`. | Checked in `AIInvestigationService`; no test of its own |
 | A client sends too many logins | `429` with `Retry-After`, before any password is checked. | `PostgresAndRedisTest`, `RateLimitFilterTest`, `scripts/smoke.sh` |
 | An entity and the database schema disagree | The application refuses to start. | `PostgresAndRedisTest` (Flyway + validate) |
 

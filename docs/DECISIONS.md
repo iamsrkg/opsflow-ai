@@ -95,3 +95,27 @@ The choices that shaped the code, with what each one costs.
 **Why.** The behaviours that matter here, a unique constraint rejecting a duplicate, a dead-letter publish, a Lua script, a pgvector operator, don't exist in a mock. The first run of the end-to-end test found a request that was never classified, which no unit test had caught.
 
 **Cost.** The suite takes about a minute, and the container tests need Docker.
+
+## A local model through an OpenAI-compatible API
+
+**Decision.** The embedding model and the language model are reached through the two standard calls (`/embeddings` and `/chat/completions`). `docker-compose.ai.yml` points them at Ollama running next to the application. Without that file, search uses feature hashing and recommendations use keyword rules.
+
+**Why.** No API key and no cost, so the AI path runs in CI and for anyone who starts the project, and no customer text leaves the machine. Because the calls are the standard ones, a hosted model is a change of three environment variables, not of code. Keeping the no-model path as the default means the demo starts in seconds and every test is deterministic.
+
+**Cost.** A small model on a CPU is slow (about 12 seconds an answer) and wrong more often than a large hosted one. The evaluation in the README is the measure of that.
+
+## Two embedding columns, not one
+
+**Decision.** Hashed vectors (256 dimensions) and model vectors (384) live in separate pgvector columns, each with its own HNSW index, and the model's name is stored with each vector.
+
+**Why.** A pgvector column has a fixed dimension, and vectors from different embedders must never be compared: the numbers mean different things. Storing the model name lets the application re-embed when the configured model changes, and ignore vectors from the old one in the meantime.
+
+**Cost.** A model with a different dimension needs a migration for a new column. The application refuses to start with a clear message in that case.
+
+## The model recommends from retrieved text, and is never trusted
+
+**Decision.** The prompt contains the request, the evidence from the system's own records, the text of the closest runbooks and the meaning of each allowed action. The answer must name one action from the list. `ActionPolicy` checks it, and a manager approves anything that changes something.
+
+**Why.** Putting the runbook text in the prompt grounds the answer in the organisation's own procedure. Checking the action in code means a wrong or manipulated answer can change what is recommended but not what is allowed.
+
+**Cost.** The model call runs inside the request. A slow model holds a request thread until the read timeout, after which the rules answer.

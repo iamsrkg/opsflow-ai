@@ -27,7 +27,7 @@ There is no permanently hosted copy of the backend; the Codespaces button and Do
 
 It is a backend project. The interesting parts are the guarantees behind those four lines: the workflow can't be bypassed, two people can't overwrite each other, an event survives Kafka being down, a redelivered event is handled once, and the AI step can't act on its own.
 
-**Built with** Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard. 45 tests run against the real services, CI starts the whole stack and tests it end to end, the same stack runs on [Kubernetes](#kubernetes) with pod-failure checks, and a [load test](#load-test) measures it: about 590 requests a second at a p95 of 188 ms on a 4-CPU machine, with all 23,622 events delivered and handled once.
+**Built with** Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard. 50 tests run against the real services, CI starts the whole stack and tests it end to end, the same stack runs on [Kubernetes](#kubernetes) with pod-failure checks, and a [load test](#load-test) measures it: about 590 requests a second at a p95 of 188 ms on a 4-CPU machine, with all 23,622 events delivered and handled once.
 
 ## Why I built it
 
@@ -45,9 +45,9 @@ It is a demonstration project, not a product with users. I chose operations supp
 | Messaging | Apache Kafka 3.8 (KRaft), Spring Kafka | Publishing every change as an event; a consumer with retries and dead-letter topics |
 | Cache store | Redis 7 with a Lua script | Rate limiting only |
 | Security | Spring Security, JWT (jjwt), BCrypt, five roles | Sign-in and what each role may do |
-| AI | A rule-based provider by default; any OpenAI-compatible chat API as an option | The recommendation in an investigation |
+| AI | Retrieval-augmented generation: an embedding model for search and a language model for the recommendation, both run locally in Ollama (or any OpenAI-compatible API); keyword rules and feature hashing as the no-model default and fallback | Finding the right runbook and recommending an action |
 | Dashboard | React 18, TypeScript, Vite, served by Nginx | Requests, investigations, approvals and the event counts |
-| Tests | JUnit 5, MockMvc, Mockito, Testcontainers, embedded Kafka, k6 | 45 automated tests and the load test |
+| Tests | JUnit 5, MockMvc, Mockito, Testcontainers, embedded Kafka, k6, an evaluation set | 50 automated tests, the load test and the AI evaluation |
 | Packaging and running | Docker (multi-stage builds), Docker Compose, Kubernetes (kustomize), GitHub Codespaces | One command or one click to start everything |
 | CI | GitHub Actions, kind | Tests, a full-stack smoke test, a Kubernetes deployment test, a dev-container check |
 | Monitoring | Spring Boot Actuator, Micrometer, Prometheus endpoint | Health checks and metrics |
@@ -76,7 +76,7 @@ OpsFlow is for any team that takes in problems, has to work out what happened, a
 |---|---|---|---|---|---|
 | **E-commerce and payments** | A customer is debited ₹500 but the order still shows `PENDING` | `PAYMENT`, high priority | The request, its audit trail, whether its events were delivered, and the *Payment Synchronization Troubleshooting Runbook* with its similarity score | `REPLAY_PAYMENT_EVENT` | A manager must approve |
 | **Travel and fintech** | A flight booking fails at checkout with a timeout, but the wallet was debited | `BOOKING`, high priority | The same, with the *Booking Failure & Inventory Recovery Guide* | `RELEASE_INVENTORY_AND_REFUND` | A manager must approve |
-| **Logistics and last-mile delivery** | A courier marks a parcel delivered; the recipient never received it | `DELIVERY`, medium priority | The same; if no runbook is close enough, the evidence says so and the confidence is lower | `OPEN_COURIER_INVESTIGATION` | A manager must approve |
+| **Logistics and last-mile delivery** | A courier marks a parcel delivered; the recipient never received it | `DELIVERY`, medium priority | The same, with the *Parcel Marked Delivered but Not Received* runbook | `OPEN_COURIER_INVESTIGATION` | A manager must approve |
 | **SaaS and API support** | A partner integration gets `504 Gateway Timeout` | `TECHNICAL`, critical priority | The same, tied together by the correlation id on every response | `ESCALATE_TO_ON_CALL` | A manager must approve |
 | **Anything else** | A request no rule recognises | `OTHER` | The same | `REQUEST_MORE_INFORMATION` | Nobody; it changes nothing |
 
@@ -148,9 +148,34 @@ graph LR
 - It can only read through `AIToolRegistry` (the request, its audit trail, its events, the runbooks). It has no database access of its own and no way to write.
 - The evidence shown to the manager is collected by the backend from its own data, so it is fact whichever provider is used.
 - `ActionPolicy` holds the list of actions that exist and which of them need approval. A provider can suggest an action; it can't invent one, and it can't mark its own suggestion as safe.
-- Two providers: `RuleBasedAIProvider` (keyword rules, the default, no network) and `OpenAiCompatibleProvider` (any chat-completions API, such as OpenAI or Ollama). If the model can't be reached or answers badly, the rules answer in its place.
+- Two providers: `RuleBasedAIProvider` (keyword rules, the default, no network) and `OpenAiCompatibleProvider` (any chat-completions API: a local Ollama, OpenAI, or another). If the model can't be reached, takes too long or answers badly, the rules answer in its place, and the investigation records that they did.
 
-**Runbook search.** Each runbook chunk gets a 256-dimension embedding. On PostgreSQL it is stored in a pgvector column and searched by cosine distance through an HNSW index; on the in-memory database the same vectors are compared in Java. The embedding is feature hashing, not a learned model: it matches shared words, not synonyms. `EmbeddingService` is the one class to replace to use a real embedding model.
+**Retrieval-augmented generation.** An investigation is retrieval, then generation:
+
+```mermaid
+flowchart LR
+    Q[Request title and description] --> E[Embed the text]
+    E --> S[(pgvector: nearest runbooks by cosine distance, HNSW index)]
+    S -->|runbook text and similarity| P[Prompt: request + evidence + runbook excerpts + allowed actions]
+    P --> M[Language model]
+    M -->|JSON: summary, cause, action, confidence| C{ActionPolicy: is the action on the list?}
+    C -->|yes| A[Stored; needs a manager if it changes anything]
+    C -->|no, or the model failed| F[Rules answer; marked as a fallback]
+```
+
+1. **Retrieve.** The request text is embedded and pgvector returns the closest runbooks. A runbook below a similarity cut-off is not used, so a vague request gets "no runbook matched" and not a misleading one.
+2. **Augment.** The prompt contains the request, the evidence from the system's own data, the text of the two closest runbooks, and what each allowed action means.
+3. **Generate.** The model answers in JSON. Its action is checked against `ActionPolicy`; anything else is replaced, and a manager still approves whatever changes something.
+
+**Two ways to embed.** `EmbeddingService` is feature hashing (256 dimensions): no model, no network, the default. `ModelEmbedder` calls an embedding model (384 dimensions) through the OpenAI-compatible `/embeddings` call. On PostgreSQL each has its own pgvector column and HNSW index, because a vector column has a fixed dimension, and the name of the model is stored with each vector so that changing the model re-embeds the runbooks. On the in-memory database the same vectors are compared in Java.
+
+**Run it with real models, no API key:**
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ai.yml up --build
+```
+
+That adds [Ollama](https://ollama.com) with `all-minilm` for embeddings and `qwen2.5:1.5b` for recommendations. The first start downloads about 1 GB. Nothing leaves the machine. For a hosted model, set `AI_BASE_URL`, `AI_API_KEY` and `AI_MODEL`.
 
 **Rate limiting.** A fixed-window counter in Redis, incremented and expired in one Lua script, checked before authentication. Login has its own lower limit. If Redis is down, requests are let through.
 
@@ -160,7 +185,7 @@ graph LR
 
 ## Tests
 
-`mvn test` in `backend/` runs 45 tests:
+`mvn test` in `backend/` runs 50 tests:
 
 | Test | What it proves |
 |---|---|
@@ -169,7 +194,8 @@ graph LR
 | `PostgresAndRedisTest` | Against real PostgreSQL (pgvector) and Redis containers: Flyway builds the schema and Hibernate validates against it, the request list and its search run, search ranks through pgvector, the sixth login in a minute gets `429` |
 | `RequestApiTest` | Through the real security filters: no token, wrong password, role checks, illegal transitions, the stale-edit conflict, the outbox row |
 | `InvestigationFlowTest` | A request from creation to resolution over HTTP, including the agent being refused the approval |
-| `OpenAiCompatibleProviderTest` | What is sent to the model, and that a failed call or an unreadable answer falls back to the rules |
+| `OpenAiCompatibleProviderTest` | What is sent to the model, including the retrieved runbook text, and that a failed call or an unreadable answer falls back to the rules and is recorded as a fallback |
+| `ModelEmbedderTest` | The embedding-model client: the call it makes, normalised vectors, a wrong-sized vector refused |
 | `EmbeddingServiceTest`, `RunbookSearchTest`, `RateLimitFilterTest`, `RuleBasedAIProviderTest`, `WorkflowStateMachineTest` | The pieces on their own |
 
 The container tests skip themselves on a machine without Docker and run in CI.
@@ -205,6 +231,32 @@ The first runs found one bug and two bottlenecks, and each fix was measured with
 | 4 | Publishing during the load rose to about 170 events a second | | 18 s |
 
 What is still slow: during the load the consumer handles about 30 events a second, because each event is its own database transaction competing with the API for connections. It catches up within seconds afterwards. A batch listener, or a separate connection pool for the consumer, is the next thing to measure.
+
+## AI evaluation
+
+"It uses AI" says nothing until it is measured, so [`eval/`](eval) holds 30 questions with the runbook that should come back and 16 requests with the action that should be recommended. They are written the way a customer writes, in different words from the runbooks. The [AI evaluation workflow](.github/workflows/ai-eval.yml) runs them on demand against the full stack, twice: without any model, and with the two local models.
+
+| | Feature hashing and keyword rules | Embedding model and language model |
+|---|---|---|
+| Right runbook ranked first | 23 of 30 (76.7%) | 26 of 30 (86.7%) |
+| Right runbook in the top three | 28 of 30 (93.3%) | 30 of 30 (100%) |
+| Mean reciprocal rank | 0.833 | 0.933 |
+| Right action recommended | 10 of 16 (62.5%) | 12 of 16 (75%) |
+| Answers that fell back to the rules | | 0 of 16 |
+| Time for one recommendation (median) | 37 ms | 12.6 s |
+
+Measured on a GitHub-hosted runner (4 CPUs, no GPU) with `all-minilm` and `qwen2.5:1.5b`. The language model is not fully repeatable even at temperature 0: across the three runs with a similarity cut-off it got 12 or 13 of 16 right, and the table shows the last run. Sixteen cases is a small set, so one case is six percentage points.
+
+What the numbers say: a real embedding model finds the right runbook more often, and always has it in the top three. A small language model picks the action better than keyword rules, at about 300 times the latency. It is still wrong one time in four, which is the reason nothing it recommends is executed without a manager.
+
+### What the evaluation changed
+
+| What it showed | Change |
+|---|---|
+| The first questions of every run returned no runbook at all. The health check said UP while the runbooks were still being embedded in one uncommitted transaction, so early searches ran against an empty index. With hashing this took milliseconds and never showed; with a model each runbook is a network call | Health now includes the readiness state and turns UP only when the seed data and the index are done; each vector is stored as it is made |
+| With no similarity cut-off, a vague request ("it is not working, please fix it") was handed an unrelated runbook and the model followed it | A cut-off of 0.3. Across the 30 questions the right runbook never scored below 0.35, so nothing correct is lost |
+
+The cut-off was chosen on the same questions it is scored on, so the retrieval figures are a best case for this set, not a forecast for new questions.
 
 ## Kubernetes
 
@@ -256,13 +308,16 @@ Settings, all optional:
 | `SPRING_PROFILES_ACTIVE` | (none) | `prod` uses PostgreSQL, Flyway and pgvector |
 | `KAFKA_ENABLED` | `false` | publish and consume events |
 | `RATE_LIMIT_ENABLED` | `false` | rate limiting in Redis |
-| `AI_PROVIDER` | `rules` | `openai` to call a model; then set `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` |
+| `AI_PROVIDER` | `rules` | `openai` to call a language model; then set `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` |
+| `EMBEDDING_PROVIDER` | `hash` | `model` to use an embedding model (`EMBEDDING_MODEL`, 384 dimensions) |
 
 `infrastructure/docker-compose.yml` starts only PostgreSQL, Kafka, Redis, Prometheus and Grafana, for running the backend from an IDE against real services.
 
 ## What it is not
 
-- **Not a real embedding model.** Runbook search matches shared words. See "Runbook search" above.
+- **No model by default.** Out of the box, search is feature hashing and recommendations are keyword rules. The embedding model and the language model are switched on with `docker-compose.ai.yml`.
+- **Not an agent.** The backend decides what evidence to collect; the model does not choose tools or act. It reads what it is given and recommends one action from a fixed list.
+- **A small local model.** The evaluation used a 1.5-billion-parameter model on a CPU: about 12 seconds an answer and three or four wrong in sixteen. A hosted model would be faster and more accurate; it was not tested.
 - **One consumer.** Notifications are the only thing consuming the events so far.
 - **No tracing system.** Correlation ids tie logs, audit entries and events together, but there are no spans or OpenTelemetry export.
 - **Events are not instant under heavy load.** At the API's limit the outbox and the consumer fall behind and catch up afterwards; see the load test.
@@ -291,6 +346,8 @@ frontend/        React dashboard, Dockerfile, nginx config
 docker-compose.yml   the whole stack
 scripts/smoke.sh     end-to-end check of a running stack
 scripts/k8s-check.sh pod-failure checks on Kubernetes
+eval/                AI evaluation: questions, expected answers, and the runner
+docker-compose.ai.yml adds a local embedding model and language model (Ollama)
 k8s/                 Kubernetes manifests (kustomize)
 load-tests/          k6 load test and its runner
 docs/            architecture, decisions, failure scenarios, API
