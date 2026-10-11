@@ -33,6 +33,7 @@ services:
       AI_READ_TIMEOUT_SECONDS: 120          # a small model on a CPU can take a while
       EMBEDDING_PROVIDER: model
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}   # 384 dimensions
+      OPSFLOW_EMBEDDING_MINIMUM_SCORE: ${EMBEDDING_MINIMUM_SCORE:-0.2}   # below this a runbook is not shown
     depends_on:
       ollama:
         condition: service_healthy

@@ -37,13 +37,14 @@ COUNT=$(jq length "$HERE/retrieval.json")
 for i in $(seq 0 $((COUNT - 1))); do
   QUERY=$(jq -r ".[$i].query" "$HERE/retrieval.json")
   EXPECTED=$(jq -r ".[$i].expected" "$HERE/retrieval.json")
-  FOUND=$(curl -fsS -G "$API/knowledge/search" --data-urlencode "query=$QUERY" --data-urlencode "limit=3" -H "$AUTH" \
-            | jq -c '[.data[].documentTitle]')
+  HITS=$(curl -fsS -G "$API/knowledge/search" --data-urlencode "query=$QUERY" --data-urlencode "limit=3" -H "$AUTH")
+  FOUND=$(echo "$HITS" | jq -c '[.data[].documentTitle]')
+  SCORES=$(echo "$HITS" | jq -c '[.data[].score]')
   # position of the expected runbook in the top three, 0 if it is not there
   RANK=$(echo "$FOUND" | jq --arg e "$EXPECTED" '(index($e) // -1) + 1')
   printf '  %s  %s\n' "$([ "$RANK" = 1 ] && echo "ok  " || echo "rank $RANK")" "$QUERY"
-  jq -nc --arg q "$QUERY" --arg e "$EXPECTED" --argjson found "$FOUND" --argjson rank "$RANK" \
-    '{query: $q, expected: $e, found: $found, rank: $rank}' >> "$OUT/retrieval.jsonl"
+  jq -nc --arg q "$QUERY" --arg e "$EXPECTED" --argjson found "$FOUND" --argjson scores "$SCORES" --argjson rank "$RANK" \
+    '{query: $q, expected: $e, found: $found, scores: $scores, rank: $rank}' >> "$OUT/retrieval.jsonl"
 done
 
 # ------------------------------------------------------------------ recommendation

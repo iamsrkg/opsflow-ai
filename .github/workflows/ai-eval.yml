@@ -8,6 +8,9 @@ on:
       model:
         description: Language model (an Ollama tag)
         default: qwen2.5:1.5b
+      minimum_score:
+        description: Similarity below which a runbook is not shown (embedding model only)
+        default: '0.2'
 jobs:
   evaluate:
     runs-on: ubuntu-latest
@@ -18,6 +21,7 @@ jobs:
         setup: [hashing-and-rules, models]
     env:
       AI_MODEL: ${{ inputs.model }}
+      EMBEDDING_MINIMUM_SCORE: ${{ inputs.minimum_score }}
       COMPOSE_FILES: ${{ matrix.setup == 'models' && '-f docker-compose.yml -f docker-compose.ai.yml' || '-f docker-compose.yml' }}
     steps:
       - uses: actions/checkout@v4

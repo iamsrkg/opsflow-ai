@@ -66,9 +66,13 @@ public class VectorStoreService {
         return results;
     }
 
-    /** Gives every chunk that has none an embedding. Runs once the application, and its seed data, are ready. */
+    /**
+     * Gives every chunk that has none an embedding. Runs after the seed data is in and before the
+     * application reports itself ready, so a search never runs against a half-built index. Not
+     * one transaction: with an embedding model each chunk is a network call, and each stored
+     * vector should be usable as soon as it is written.
+     */
     @EventListener(ApplicationReadyEvent.class)
-    @Transactional
     public void indexMissingChunks() {
         List<Long> missing = vectorIndex.chunksWithoutEmbedding();
         try {

@@ -101,6 +101,12 @@ management:
   health:
     redis:
       enabled: ${RATE_LIMIT_ENABLED:false}   # only report on Redis when it is actually used
+    # /actuator/health is UP only once the seed data is in and the runbooks are embedded,
+    # not as soon as the web server answers
+    readinessstate:
+      enabled: true
+    livenessstate:
+      enabled: true
   metrics:
     export:
       prometheus:
