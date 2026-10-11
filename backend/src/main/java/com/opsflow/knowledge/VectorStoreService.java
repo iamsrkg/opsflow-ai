@@ -18,27 +18,32 @@ import java.util.stream.Collectors;
 public class VectorStoreService {
 
     private static final Logger logger = LoggerFactory.getLogger(VectorStoreService.class);
-    /** Below this similarity a chunk shares too little with the query to be worth showing. */
-    private static final double MINIMUM_SCORE = 0.05;
-
     private final KnowledgeChunkRepository chunkRepository;
     private final KnowledgeDocumentRepository documentRepository;
-    private final EmbeddingService embeddingService;
+    private final TextEmbedder embedder;
     private final VectorIndex vectorIndex;
 
     public VectorStoreService(KnowledgeChunkRepository chunkRepository,
                               KnowledgeDocumentRepository documentRepository,
-                              EmbeddingService embeddingService,
+                              TextEmbedder embedder,
                               VectorIndex vectorIndex) {
         this.chunkRepository = chunkRepository;
         this.documentRepository = documentRepository;
-        this.embeddingService = embeddingService;
+        this.embedder = embedder;
         this.vectorIndex = vectorIndex;
     }
 
     @Transactional(readOnly = true)
     public List<SearchResult> searchVectorStore(String query, int topK) {
-        List<VectorIndex.Hit> hits = vectorIndex.nearest(embeddingService.embed(query), topK);
+        float[] queryVector;
+        try {
+            queryVector = embedder.embed(query);
+        } catch (RuntimeException e) {
+            // an embedding model that is down must not take investigations down with it
+            logger.warn("Runbook search is unavailable, {} could not embed the query: {}", embedder.name(), e.getMessage());
+            return List.of();
+        }
+        List<VectorIndex.Hit> hits = vectorIndex.nearest(queryVector, topK);
 
         Map<Long, KnowledgeChunk> chunks = chunkRepository.findAllById(hits.stream().map(VectorIndex.Hit::chunkId).toList())
                 .stream().collect(Collectors.toMap(KnowledgeChunk::getId, Function.identity()));
@@ -49,7 +54,7 @@ public class VectorStoreService {
         List<SearchResult> results = new ArrayList<>();
         for (VectorIndex.Hit hit : hits) {
             KnowledgeChunk chunk = chunks.get(hit.chunkId());
-            if (chunk == null || hit.score() < MINIMUM_SCORE) {
+            if (chunk == null || hit.score() < embedder.minimumScore()) {
                 continue;
             }
             KnowledgeDocument document = documents.get(chunk.getDocumentId());
@@ -66,15 +71,21 @@ public class VectorStoreService {
     @Transactional
     public void indexMissingChunks() {
         List<Long> missing = vectorIndex.chunksWithoutEmbedding();
-        for (KnowledgeChunk chunk : chunkRepository.findAllById(missing)) {
-            KnowledgeDocument document = documentRepository.findById(chunk.getDocumentId()).orElse(null);
-            // the title and tags describe the runbook better than any one paragraph, so they are embedded with it
-            String text = document == null ? chunk.getText()
-                    : document.getTitle() + " " + document.getTags() + " " + chunk.getText();
-            vectorIndex.store(chunk.getId(), embeddingService.embed(text));
+        try {
+            for (KnowledgeChunk chunk : chunkRepository.findAllById(missing)) {
+                KnowledgeDocument document = documentRepository.findById(chunk.getDocumentId()).orElse(null);
+                // the title and tags describe the runbook better than any one paragraph, so they are embedded with it
+                String text = document == null ? chunk.getText()
+                        : document.getTitle() + ". " + document.getTags() + ". " + chunk.getText();
+                vectorIndex.store(chunk.getId(), embedder.embed(text));
+            }
+        } catch (RuntimeException e) {
+            // the application still starts; search finds nothing for these chunks until the next start
+            logger.error("Could not embed the runbooks with {}: {}", embedder.name(), e.getMessage());
+            return;
         }
         if (!missing.isEmpty()) {
-            logger.info("Embedded {} runbook chunks", missing.size());
+            logger.info("Embedded {} runbook chunks with {}", missing.size(), embedder.name());
         }
     }
 

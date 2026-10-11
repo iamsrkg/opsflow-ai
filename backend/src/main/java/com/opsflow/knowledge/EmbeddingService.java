@@ -11,15 +11,31 @@ import java.util.Locale;
  * This is feature hashing, not a language model: every word, and every pair of neighbouring
  * words, is hashed to one of DIMENSIONS slots and counted there. It needs no network call or
  * API key, gives the same vector for the same text every time, and is good enough to rank a
- * few hundred runbooks. A learned embedding model would understand synonyms; this one only
- * matches shared words. Swapping one in means changing this class and the dimension in the
- * V2 migration.
+ * few hundred runbooks. A learned embedding model understands synonyms; this one only
+ * matches shared words. ModelEmbedder is the learned one, switched on with
+ * EMBEDDING_PROVIDER=model.
  */
 @Service
-public class EmbeddingService {
+public class EmbeddingService implements TextEmbedder {
 
     public static final int DIMENSIONS = 256;
 
+    @Override
+    public String name() {
+        return "hash-" + DIMENSIONS;
+    }
+
+    @Override
+    public int dimensions() {
+        return DIMENSIONS;
+    }
+
+    @Override
+    public double minimumScore() {
+        return 0.05;   // hashed vectors of unrelated texts are almost exactly at right angles
+    }
+
+    @Override
     public float[] embed(String text) {
         float[] vector = new float[DIMENSIONS];
         if (text == null) {

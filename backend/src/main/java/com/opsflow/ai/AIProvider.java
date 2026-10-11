@@ -41,5 +41,7 @@ public interface AIProvider {
         private String likelyCause;
         private String recommendedAction;
         private double confidence;
+        /** True when a model was asked but its answer could not be used, and the rules answered instead. */
+        private boolean fellBack;
     }
 }

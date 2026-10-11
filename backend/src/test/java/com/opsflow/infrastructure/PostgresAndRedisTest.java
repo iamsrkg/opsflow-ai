@@ -62,7 +62,7 @@ class PostgresAndRedisTest {
     @Test
     void flywayBuiltTheSchemaAndTheSeedDataWentIn() {
         Integer migrations = jdbc.queryForObject("select count(*) from flyway_schema_history where success", Integer.class);
-        assertEquals(2, migrations);
+        assertEquals(3, migrations);
         Integer users = jdbc.queryForObject("select count(*) from users", Integer.class);
         assertTrue(users >= 5);
     }

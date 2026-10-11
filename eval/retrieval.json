@@ -1,0 +1,41 @@
+[
+  {"query": "money left my bank but the purchase still shows as unpaid", "expected": "Payment Synchronization Troubleshooting Runbook"},
+  {"query": "customer was debited yet their order is stuck waiting for payment", "expected": "Payment Synchronization Troubleshooting Runbook"},
+  {"query": "card was charged and the transaction is authorised but the order status never changed", "expected": "Payment Synchronization Troubleshooting Runbook"},
+
+  {"query": "I added funds to my wallet, the bank confirmed it, but my balance is the same", "expected": "Payment Gateway Webhook Not Received"},
+  {"query": "subscription renewal was paid but the plan was not extended", "expected": "Payment Gateway Webhook Not Received"},
+  {"query": "the gateway says it notified us of the payment but we have no record of the callback", "expected": "Payment Gateway Webhook Not Received"},
+
+  {"query": "plane ticket purchase crashed at the last step and I was still billed", "expected": "Booking Failure & Inventory Recovery Guide"},
+  {"query": "checkout errored while reserving a seat on a flight, money was taken", "expected": "Booking Failure & Inventory Recovery Guide"},
+  {"query": "the seat I tried to buy is held by a failed purchase and nobody else can buy it", "expected": "Booking Failure & Inventory Recovery Guide"},
+
+  {"query": "two guests turned up with a confirmation for the same room", "expected": "Hotel Overbooking and Double Allocation Guide"},
+  {"query": "the property says it has no record of my reservation even though I have a confirmation", "expected": "Hotel Overbooking and Double Allocation Guide"},
+  {"query": "the same room was sold twice for the same night", "expected": "Hotel Overbooking and Double Allocation Guide"},
+
+  {"query": "tracking says my package arrived but there is nothing at my door", "expected": "Parcel Marked Delivered but Not Received"},
+  {"query": "the driver closed the delivery as complete and the recipient never got it", "expected": "Parcel Marked Delivered but Not Received"},
+  {"query": "where can I see the photo and signature the courier took when dropping off the package", "expected": "Parcel Marked Delivered but Not Received"},
+
+  {"query": "my shipment has not moved for a week", "expected": "Parcel Stuck in Transit or Misrouted"},
+  {"query": "the package is travelling to a different city than my address", "expected": "Parcel Stuck in Transit or Misrouted"},
+  {"query": "no scan updates on the consignment for four days, it seems lost in the network", "expected": "Parcel Stuck in Transit or Misrouted"},
+
+  {"query": "our integration keeps getting 504 responses from your endpoints", "expected": "API Gateway Timeouts and 5xx Errors"},
+  {"query": "partner reports that calls to our service fail with a bad gateway error", "expected": "API Gateway Timeouts and 5xx Errors"},
+  {"query": "requests from our system to yours hang and then fail after thirty seconds", "expected": "API Gateway Timeouts and 5xx Errors"},
+
+  {"query": "status emails and alerts are arriving hours late for everyone", "expected": "Kafka Consumer Lag & Outbox Event Recovery Guide"},
+  {"query": "messages are piling up in the queue and the consumer cannot keep up", "expected": "Kafka Consumer Lag & Outbox Event Recovery Guide"},
+  {"query": "background updates stopped being processed and many events are waiting to be published", "expected": "Kafka Consumer Lag & Outbox Event Recovery Guide"},
+
+  {"query": "the whole site is crawling and every page errors for all users", "expected": "Database Connection Pool Exhaustion"},
+  {"query": "logs say the application could not obtain a connection to the database", "expected": "Database Connection Pool Exhaustion"},
+  {"query": "a slow query has used up all the available database sessions", "expected": "Database Connection Pool Exhaustion"},
+
+  {"query": "I cannot get into my profile, it says my credentials are wrong", "expected": "Sign-in Failures and Locked Accounts"},
+  {"query": "the one-time code never reached my phone", "expected": "Sign-in Failures and Locked Accounts"},
+  {"query": "my account has been blocked after too many attempts", "expected": "Sign-in Failures and Locked Accounts"}
+]

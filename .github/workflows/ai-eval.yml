@@ -1,0 +1,47 @@
+name: AI evaluation
+# Runs on demand. Scores runbook retrieval and the recommended action twice: once with feature
+# hashing and keyword rules (no model), once with a real embedding model and a real language
+# model running locally in Ollama. Same questions, same stack, so the two can be compared.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Language model (an Ollama tag)
+        default: qwen2.5:1.5b
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        setup: [hashing-and-rules, models]
+    env:
+      AI_MODEL: ${{ inputs.model }}
+      COMPOSE_FILES: ${{ matrix.setup == 'models' && '-f docker-compose.yml -f docker-compose.ai.yml' || '-f docker-compose.yml' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Machine
+        run: |
+          echo "$(nproc) CPUs, $(free -g | awk '/Mem:/{print $2}') GB memory"
+      - run: docker compose $COMPOSE_FILES up --build -d
+      - run: bash eval/run.sh
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.setup }}"
+            echo '```json'
+            cat eval/results/result.json 2>/dev/null || echo "no result"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-eval-${{ matrix.setup }}
+          path: eval/results
+      - if: failure()
+        run: |
+          docker compose $COMPOSE_FILES ps
+          docker compose $COMPOSE_FILES logs --tail=120 backend
+          docker compose $COMPOSE_FILES logs --tail=40 ollama || true

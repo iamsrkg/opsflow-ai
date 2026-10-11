@@ -1,6 +1,7 @@
 package com.opsflow.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.opsflow.knowledge.VectorStoreService;
 import com.opsflow.request.Category;
 import com.opsflow.request.Priority;
 import com.opsflow.request.Request;
@@ -66,6 +67,7 @@ class OpenAiCompatibleProviderTest {
         assertEquals("REPLAY_PAYMENT_EVENT", recommendation.getRecommendedAction());
         assertEquals("Retry without idempotency", recommendation.getLikelyCause());
         assertEquals(0.8, recommendation.getConfidence(), 1e-9);
+        assertTrue(!recommendation.isFellBack());
         server.verify();
     }
 
@@ -85,6 +87,27 @@ class OpenAiCompatibleProviderTest {
         AIProvider.Recommendation recommendation = provider.recommend(evidence);
 
         assertEquals("REPLAY_PAYMENT_EVENT", recommendation.getRecommendedAction(), "the usual action for a payment request");
+        assertTrue(recommendation.isFellBack(), "the investigation records that the rules answered, not the model");
+    }
+
+    @Test
+    void theRetrievedRunbookTextIsPutIntoThePrompt() {
+        var runbook = new VectorStoreService.SearchResult(1L, 1L, "Payment Synchronization Troubleshooting Runbook",
+                "If the gateway authorized the payment but the order never received the event, send the event again.", 0.71);
+        Evidence withRunbook = new Evidence(evidence.request(), 3, 2, 1, 2, List.of(runbook));
+
+        String prompt = provider.userPrompt(withRunbook);
+
+        assertTrue(prompt.contains("Payment Synchronization Troubleshooting Runbook"), prompt);
+        assertTrue(prompt.contains("the order never received the event"), "the runbook's own words, not only its title");
+        assertTrue(prompt.contains("Charged twice"), "and the request it is about");
+    }
+
+    @Test
+    void withNoRunbookThePromptSaysSoAndTheModelIsToldItMayAskForMore() {
+        assertTrue(provider.userPrompt(evidence).contains("No runbook matched"));
+        assertTrue(provider.systemPrompt().contains("REQUEST_MORE_INFORMATION"));
+        assertTrue(provider.systemPrompt().contains("do not invent facts"));
     }
 
     @Test

@@ -21,3 +21,6 @@ Thumbs.db
 .env
 .env.local
 load-tests/results/
+
+# AI evaluation output
+eval/results/

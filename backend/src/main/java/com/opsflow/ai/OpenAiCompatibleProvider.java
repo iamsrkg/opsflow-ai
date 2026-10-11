@@ -28,6 +28,9 @@ import java.util.Map;
 @ConditionalOnProperty(name = "opsflow.ai.provider", havingValue = "openai")
 public class OpenAiCompatibleProvider implements AIProvider {
 
+    private static final int MAX_RUNBOOKS_IN_PROMPT = 2;
+    private static final int MAX_RUNBOOK_CHARACTERS = 700;
+
     private static final Logger logger = LoggerFactory.getLogger(OpenAiCompatibleProvider.class);
 
     private final RestClient http;
@@ -73,20 +76,51 @@ public class OpenAiCompatibleProvider implements AIProvider {
                     .build();
         } catch (Exception e) {
             logger.warn("The model could not be used ({}); falling back to the rules", e.getMessage());
-            return fallback.recommend(evidence);
+            Recommendation fromRules = fallback.recommend(evidence);
+            fromRules.setFellBack(true);
+            return fromRules;
         }
     }
 
     private String ask(Evidence evidence) {
-        String system = "You help an operations team decide what to do about a customer request. "
-                + "Use only the evidence given. Answer with one JSON object with the fields summary, likelyCause, "
-                + "recommendedAction and confidence (0 to 1). recommendedAction must be exactly one of: "
-                + String.join(", ", policy.allActions()) + ". If the evidence is not enough, choose "
-                + ActionPolicy.REQUEST_MORE_INFORMATION + ".";
-        String user = "Title: " + evidence.request().getTitle() + "\n"
-                + "Description: " + evidence.request().getDescription() + "\n"
-                + "Evidence:\n- " + String.join("\n- ", evidence.asLines());
+        return askModel(systemPrompt(), userPrompt(evidence));
+    }
 
+    String systemPrompt() {
+        StringBuilder actions = new StringBuilder();
+        policy.describedActions().forEach((action, meaning) -> actions.append("- ").append(action).append(": ").append(meaning).append("\n"));
+        return "You help an operations team decide what to do about a customer request. "
+                + "Use only the request, the evidence and the runbook excerpts you are given; do not invent facts. "
+                + "Answer with one JSON object with the fields summary, likelyCause, recommendedAction and confidence (0 to 1). "
+                + "recommendedAction must be exactly one of these names:\n" + actions
+                + "If the request does not say enough to decide, choose " + ActionPolicy.REQUEST_MORE_INFORMATION + ".";
+    }
+
+    /** The retrieved runbook text goes into the prompt: the model answers from it, not from memory. */
+    String userPrompt(Evidence evidence) {
+        StringBuilder prompt = new StringBuilder()
+                .append("Request title: ").append(evidence.request().getTitle()).append("\n")
+                .append("Request description: ").append(evidence.request().getDescription()).append("\n\n")
+                .append("Evidence from our systems:\n- ").append(String.join("\n- ", evidence.asLines())).append("\n\n");
+        if (evidence.runbooks().isEmpty()) {
+            prompt.append("No runbook matched this request.");
+        } else {
+            prompt.append("Runbook excerpts, closest first:\n");
+            int shown = 0;
+            for (var runbook : evidence.runbooks()) {
+                if (shown++ == MAX_RUNBOOKS_IN_PROMPT) {
+                    break;
+                }
+                String text = runbook.getSnippet();
+                prompt.append("[").append(shown).append("] ").append(runbook.getDocumentTitle()).append(": ")
+                        .append(text.length() > MAX_RUNBOOK_CHARACTERS ? text.substring(0, MAX_RUNBOOK_CHARACTERS) + "..." : text)
+                        .append("\n");
+            }
+        }
+        return prompt.toString();
+    }
+
+    private String askModel(String system, String user) {
         JsonNode response = http.post()
                 .uri("/chat/completions")
                 .contentType(MediaType.APPLICATION_JSON)

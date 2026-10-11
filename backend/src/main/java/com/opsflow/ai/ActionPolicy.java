@@ -42,6 +42,18 @@ public class ActionPolicy {
         return USUAL_ACTION.getOrDefault(category, REQUEST_MORE_INFORMATION);
     }
 
+    /** What each action means, in the words given to a language model so it can choose between them. */
+    public Map<String, String> describedActions() {
+        Map<String, String> actions = new java.util.LinkedHashMap<>();
+        actions.put("REPLAY_PAYMENT_EVENT", "the payment succeeded at the gateway but the order or account was not updated; send the payment event again");
+        actions.put("RELEASE_INVENTORY_AND_REFUND", "a booking or reservation failed or was double-allocated after the customer paid; free the seat, room or stock and refund");
+        actions.put("OPEN_COURIER_INVESTIGATION", "a parcel is missing, misrouted, damaged, or marked delivered but not received; open a case with the courier");
+        actions.put("ESCALATE_TO_ON_CALL", "a technical fault in our own systems (timeouts, errors, outages, lag); page the on-call engineer");
+        actions.put(REQUEST_MORE_INFORMATION, "the report does not say enough to decide; ask the customer for details");
+        actions.put(NEEDS_HUMAN_REVIEW, "none of the above fits");
+        return actions;
+    }
+
     public Set<String> allActions() {
         return Set.of("REPLAY_PAYMENT_EVENT", "RELEASE_INVENTORY_AND_REFUND", "OPEN_COURIER_INVESTIGATION",
                 "ESCALATE_TO_ON_CALL", REQUEST_MORE_INFORMATION, NEEDS_HUMAN_REVIEW);

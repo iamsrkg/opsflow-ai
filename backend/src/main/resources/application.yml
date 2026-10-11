@@ -82,6 +82,13 @@ opsflow:
     base-url: ${AI_BASE_URL:https://api.openai.com/v1}
     api-key: ${AI_API_KEY:}
     model: ${AI_MODEL:gpt-4o-mini}
+    connect-timeout-seconds: 5
+    read-timeout-seconds: ${AI_READ_TIMEOUT_SECONDS:60}   # a model that does not answer in time falls back to the rules
+  embedding:
+    # hash: feature hashing, no model, no network (the default)
+    # model: an embedding model behind the same kind of API ("/embeddings"); 384 dimensions with PostgreSQL
+    provider: ${EMBEDDING_PROVIDER:hash}
+    model: ${EMBEDDING_MODEL:all-minilm}
 
 management:
   endpoints:

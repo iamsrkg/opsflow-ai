@@ -107,7 +107,8 @@ public class AIInvestigationService {
 
         AIInvestigation saved = investigationRepository.save(AIInvestigation.builder()
                 .requestId(requestId)
-                .investigatedBy(currentUser + " via " + aiProvider.name())
+                // say so when a model was configured but the rules had to answer
+                .investigatedBy(currentUser + " via " + (recommendation.isFellBack() ? "rules (fallback from " + aiProvider.name() + ")" : aiProvider.name()))
                 .summary(recommendation.getSummary())
                 .evidenceJson(evidenceJson)
                 .likelyCause(recommendation.getLikelyCause())

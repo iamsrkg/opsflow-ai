@@ -1,0 +1,41 @@
+# Adds a real embedding model and a real language model, running locally in Ollama.
+# No API key, nothing leaves the machine. The first start downloads about 1 GB of models.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ai.yml up --build
+#
+# Without this file the stack uses feature hashing and keyword rules, which need no model.
+# To use a hosted model instead, set AI_BASE_URL, AI_API_KEY and AI_MODEL on the backend:
+# both calls are the standard OpenAI-compatible ones.
+services:
+  ollama:
+    image: ollama/ollama:0.5.7
+    # start the server, pull the two models once, then mark the container ready
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        until ollama list > /dev/null 2>&1; do sleep 1; done
+        ollama pull ${EMBEDDING_MODEL:-all-minilm} && ollama pull ${AI_MODEL:-qwen2.5:1.5b} && touch /tmp/models-ready
+        wait
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/models-ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 240
+
+  backend:
+    environment:
+      AI_PROVIDER: openai
+      AI_BASE_URL: http://ollama:11434/v1
+      AI_MODEL: ${AI_MODEL:-qwen2.5:1.5b}
+      AI_READ_TIMEOUT_SECONDS: 120          # a small model on a CPU can take a while
+      EMBEDDING_PROVIDER: model
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}   # 384 dimensions
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+volumes:
+  ollama:

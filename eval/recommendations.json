@@ -1,0 +1,22 @@
+[
+  {"title": "Paid but order unpaid", "description": "The amount left my bank account yesterday but the purchase still shows as waiting for payment.", "expected": "REPLAY_PAYMENT_EVENT"},
+  {"title": "Wallet not credited", "description": "I added funds to my wallet and my bank confirmed the transfer, but the balance in the app has not changed.", "expected": "REPLAY_PAYMENT_EVENT"},
+  {"title": "Renewal not applied", "description": "My subscription renewal was taken from my card this morning but my plan still shows as expired.", "expected": "REPLAY_PAYMENT_EVENT"},
+
+  {"title": "Flight purchase failed", "description": "The plane ticket purchase crashed at the last step. No ticket was issued but I was billed the full fare.", "expected": "RELEASE_INVENTORY_AND_REFUND"},
+  {"title": "Room sold twice", "description": "I arrived at the hotel and another guest holds a confirmation for the same room on the same night. The hotel kept the earlier reservation, which was not mine.", "expected": "RELEASE_INVENTORY_AND_REFUND"},
+  {"title": "Concert seats not issued", "description": "Checkout timed out while I was reserving two seats. I have no tickets, the seats now show as unavailable, and I was charged.", "expected": "RELEASE_INVENTORY_AND_REFUND"},
+
+  {"title": "Package not at my door", "description": "Tracking says the package was handed over two days ago, but nothing arrived and my neighbours do not have it.", "expected": "OPEN_COURIER_INVESTIGATION"},
+  {"title": "Shipment not moving", "description": "My shipment has had no tracking update for six days and the last scan was at a depot in another region.", "expected": "OPEN_COURIER_INVESTIGATION"},
+  {"title": "Sent to the wrong city", "description": "The consignment is travelling to a city on the other side of the country from the address I gave.", "expected": "OPEN_COURIER_INVESTIGATION"},
+
+  {"title": "Integration failing", "description": "Since 09:00 every call from our system to your endpoints hangs and then fails with a 504 response. Nothing changed on our side.", "expected": "ESCALATE_TO_ON_CALL"},
+  {"title": "Everything is slow", "description": "The whole site is crawling for all of our staff and most pages end in an error. It started ten minutes ago.", "expected": "ESCALATE_TO_ON_CALL"},
+  {"title": "Alerts arriving late", "description": "Status emails for all our customers are arriving several hours late since last night.", "expected": "ESCALATE_TO_ON_CALL"},
+
+  {"title": "Cannot get in", "description": "I cannot get into my profile. It says my details are wrong.", "expected": "REQUEST_MORE_INFORMATION"},
+  {"title": "Code not received", "description": "The one-time code never reaches my phone so I am locked out.", "expected": "REQUEST_MORE_INFORMATION"},
+  {"title": "Something is wrong", "description": "It is not working. Please fix it as soon as possible.", "expected": "REQUEST_MORE_INFORMATION"},
+  {"title": "Problem with my thing", "description": "I had an issue last week and it is still there.", "expected": "REQUEST_MORE_INFORMATION"}
+]
