@@ -10,7 +10,7 @@ on:
         default: qwen2.5:1.5b
       minimum_score:
         description: Similarity below which a runbook is not shown (embedding model only)
-        default: '0.2'
+        default: '0.3'
 jobs:
   evaluate:
     runs-on: ubuntu-latest
