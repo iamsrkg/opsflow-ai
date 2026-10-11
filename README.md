@@ -29,6 +29,29 @@ It is a backend project. The interesting parts are the guarantees behind those f
 
 **Built with** Java 17 and Spring Boot 3.3, PostgreSQL with pgvector, Kafka, Redis, and a React dashboard. 45 tests run against the real services, CI starts the whole stack and tests it end to end, the same stack runs on [Kubernetes](#kubernetes) with pod-failure checks, and a [load test](#load-test) measures it: about 590 requests a second at a p95 of 188 ms on a 4-CPU machine, with all 23,622 events delivered and handled once.
 
+## Why I built it
+
+I'm a backend engineer, and most of what I have built at work is private. I built OpsFlow AI in the open, in October 2026, to put the patterns I use into one system that anyone can read, run and try to break: a workflow that can't be bypassed, events that are never lost or handled twice, and an AI step that is useful without being trusted.
+
+It is a demonstration project, not a product with users. I chose operations support as the subject because it needs all of those guarantees at once: a wrong step, a lost event or an unapproved refund each has a real cost. Everything the README claims is covered by a test, and the limits are listed under [What it is not](#what-it-is-not).
+
+## Tech stack
+
+| Layer | What is used | What for |
+|---|---|---|
+| Language and framework | Java 17, Spring Boot 3.3 (Web, Data JPA, Security, Validation, Actuator) | The REST API and the application itself |
+| Database | PostgreSQL 16, Hibernate, Flyway | Requests, audit trail, outbox and processed-event tables; versioned schema migrations |
+| Vector search | pgvector with an HNSW index | Finding the closest runbook for an investigation |
+| Messaging | Apache Kafka 3.8 (KRaft), Spring Kafka | Publishing every change as an event; a consumer with retries and dead-letter topics |
+| Cache store | Redis 7 with a Lua script | Rate limiting only |
+| Security | Spring Security, JWT (jjwt), BCrypt, five roles | Sign-in and what each role may do |
+| AI | A rule-based provider by default; any OpenAI-compatible chat API as an option | The recommendation in an investigation |
+| Dashboard | React 18, TypeScript, Vite, served by Nginx | Requests, investigations, approvals and the event counts |
+| Tests | JUnit 5, MockMvc, Mockito, Testcontainers, embedded Kafka, k6 | 45 automated tests and the load test |
+| Packaging and running | Docker (multi-stage builds), Docker Compose, Kubernetes (kustomize), GitHub Codespaces | One command or one click to start everything |
+| CI | GitHub Actions, kind | Tests, a full-stack smoke test, a Kubernetes deployment test, a dev-container check |
+| Monitoring | Spring Boot Actuator, Micrometer, Prometheus endpoint | Health checks and metrics |
+
 ## The problem it solves
 
 Most teams already handle these problems, just without a system built for it: a ticket in a general tool, an engineer searching logs, a fix agreed in chat. That works until something goes wrong, and then nobody can say who decided what, or why. This is what changes:
