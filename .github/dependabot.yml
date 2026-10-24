@@ -7,6 +7,14 @@ updates:
     ignore:
       - dependency-name: "vite"
         update-types: ["version-update:semver-major"]
+    # react and react-dom (and their types) must move together, or npm ci fails on peer dependencies
+    groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
   - package-ecosystem: "maven"
     directory: "/backend"
     schedule:
