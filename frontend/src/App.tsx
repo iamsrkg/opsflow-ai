@@ -19,6 +19,7 @@ type Mode = 'checking' | 'sample' | 'login' | 'live';
 
 export const App: React.FC = () => {
   const [mode, setMode] = useState<Mode>('checking');
+  const [waking, setWaking] = useState(false);
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [requests, setRequests] = useState<RequestResponseDTO[]>([]);
@@ -45,9 +46,11 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     Session.onError(setError);
-    Session.probe().then((backendIsThere) => {
-      if (!backendIsThere) setMode('sample');
-      else setMode(Session.isSignedIn() ? 'live' : 'login');
+    Session.probe(() => setWaking(true)).then((backendIsThere) => {
+      // a visitor who chose the sample data while the backend was waking keeps it
+      setMode((current) => current !== 'checking' ? current
+        : !backendIsThere ? 'sample'
+        : Session.isSignedIn() ? 'live' : 'login');
     });
   }, []);
 
@@ -56,7 +59,18 @@ export const App: React.FC = () => {
   }, [mode, loadData]);
 
   if (mode === 'checking') {
-    return <div className="login-screen"><div style={{ color: '#9ca3af' }}>Looking for the backend…</div></div>;
+    return (
+      <div className="login-screen">
+        <div style={{ color: '#9ca3af', maxWidth: '28rem', textAlign: 'center', lineHeight: 1.5 }}>
+          {!waking ? 'Looking for the backend…' : (
+            <>
+              <p>Waking up the backend. It runs on free hosting, which sleeps when nobody is using it, so the first visit can take a few minutes.</p>
+              <button className="btn-secondary" onClick={() => setMode('sample')}>Show sample data instead</button>
+            </>
+          )}
+        </div>
+      </div>
+    );
   }
   if (mode === 'login') {
     return <LoginView onSignedIn={() => { setError(''); setMode('live'); }} />;

@@ -2,7 +2,10 @@ import { DashboardMetrics, RequestResponseDTO, AIInvestigation, ApprovalRequest,
 
 // Where the API lives. Same origin by default (the dev server and the Docker image proxy /api to the backend);
 // set VITE_API_BASE at build time to point a statically hosted dashboard at a backend elsewhere.
-const API_BASE: string = ((import.meta as any).env?.VITE_API_BASE as string | undefined) ?? '/api/v1';
+const REMOTE_API_BASE = ((import.meta as any).env?.VITE_API_BASE as string | undefined) || '';
+const API_BASE: string = REMOTE_API_BASE || '/api/v1';
+// A backend on free hosting sleeps when idle and can take a few minutes to wake, so keep asking that long.
+const WAKE_DEADLINE_MS = REMOTE_API_BASE ? 300_000 : 0;
 const HEALTH_URL = API_BASE.replace(/\/api\/v1\/?$/, '') + '/actuator/health';
 const TOKEN_KEY = 'opsflow.token';
 
@@ -52,20 +55,36 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body?.data as T;
 }
 
+/** One look at /actuator/health. While a free host wakes the backend, it answers with an error page, not JSON. */
+async function healthAnswers(): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const res = await fetch(HEALTH_URL, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    const body = await res.json();
+    return typeof body?.status === 'string';
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const Session = {
   isLive: () => live,
   isSignedIn: () => live && !!token && !!user,
   user: () => user,
   onError(listener: (message: string) => void) { errorListeners.push(listener); },
 
-  /** Is there a backend behind this page? Decides between the real API and the sample data. */
-  async probe(): Promise<boolean> {
-    try {
-      const res = await fetch(HEALTH_URL, { headers: { Accept: 'application/json' } });
-      const body = await res.json();
-      live = typeof body?.status === 'string';
-    } catch {
-      live = false;
+  /** Is there a backend behind this page? Decides between the real API and the sample data.
+   *  onWaiting is called while a sleeping backend is still waking up. */
+  async probe(onWaiting?: () => void): Promise<boolean> {
+    const deadline = Date.now() + WAKE_DEADLINE_MS;
+    for (;;) {
+      live = await healthAnswers();
+      if (live || Date.now() >= deadline) break;
+      onWaiting?.();
+      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
     if (live && token) {
       try { user = await call<SessionUser>('/auth/me'); } catch { token = null; user = null; }

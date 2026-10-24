@@ -1,0 +1,26 @@
+# Render Blueprint: the backend on Render's free plan, for the live demo.
+# It runs the default profile: in-memory database (reloaded with the seed data on every start),
+# rule-based AI and hashing embeddings, no Kafka and no Redis. Events wait in the outbox.
+services:
+  - type: web
+    name: opsflow-backend
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /actuator/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: OPSFLOW_SECURITY_JWT_SECRET      # a fresh signing key, not the one in application.yml
+        generateValue: true
+      - key: SPRING_H2_CONSOLE_ENABLED
+        value: "false"
+      - key: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+        value: health
+      - key: JAVA_TOOL_OPTIONS                # 512 MB and a small CPU share: fast start, small heap
+        value: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
+      - key: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS   # the dashboard needs only the status
+        value: never
